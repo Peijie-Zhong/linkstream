@@ -65,10 +65,8 @@ def longitudinal_modularity(
     ### 4 - Aggregation
     lm_modularity = 0
     for community, expectation in communities_expectations.items():
-        print(f"Community {community}: expectation={expectation}")
         nb_links = communities_nb_interactions[community]
         lm_modularity += nb_links / (2 * linkstream.nb_edges) - expectation
-    print(f"LM modularity before time penalty: {lm_modularity}")
     lm_modularity += time_penalty
 
     # NOTE Reset linkstream.leaves_dict commu tags ?
@@ -113,12 +111,7 @@ def _get_communities_jmes(
         expectation = 0
         community_nodes = set([leaf.node for leaf in leaves])
         community_duration = get_module_duration(leaves)
-        print(linkstream.degrees)
-        print(linkstream.nb_edges)
-        print(linkstream.network_duration)
-        print(f"community_duration:{community_duration}")
         for source, target in combinations_with_replacement(community_nodes, 2):
-            print(f"source:{source}, target:{target}, factor:{2 ** (source != target)}, product degrees:{linkstream.degrees.get(source, 0) * linkstream.degrees.get(target, 0)}")
             # NOTE Does not make a lot of sense to apply stream graph change here
             expected_value = (
                 2 ** (source != target)
@@ -165,9 +158,6 @@ def _get_communities_mmes(
                     )
                     / (2 * linkstream.nb_edges) ** 2
                 )
-                # print(source, nodes_durations.get(source, 0), linkstream.nodes_durations[source])
-                # print(target, nodes_durations.get(target, 0), linkstream.nodes_durations[target])
-                # input()
             else:
                 expected_value = (
                     2 ** (source != target)
@@ -216,7 +206,6 @@ def _get_communities_cmes(
                         / (2 * linkstream.nb_edges) ** 2
                     )
                 else:
-                    print(f"source:{source}, target:{target}, c:{commu} coexistence:{coexistence}")
                     expected_value = (
                         2 ** (source != target)
                         * linkstream.degrees.get(source, 0)

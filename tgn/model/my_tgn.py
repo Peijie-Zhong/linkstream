@@ -45,7 +45,7 @@ class TGN(torch.nn.Module):
                # additional parameters can be added here
                num_communities=5
                ):
-    super(TGN, self).__init__()
+    super().__init__()
 
     self.n_layers = n_layers
     self.neighbor_finder = neighbor_finder
@@ -236,7 +236,8 @@ class TGN(torch.nn.Module):
 
   def get_raw_messages(self, source_nodes, source_node_embedding, destination_nodes,
                        destination_node_embedding, edge_times, edge_idxs):
-    edge_times = torch.from_numpy(edge_times).float().to(self.device)
+    edge_times = edge_times.float().to(self.device)
+    #edge_times = torch.from_numpy(edge_times).float().to(self.device)
     edge_features = self.edge_raw_features[edge_idxs]
 
     source_memory = self.memory.get_memory(source_nodes) if not \
@@ -252,7 +253,16 @@ class TGN(torch.nn.Module):
                                 source_time_delta_encoding],
                                dim=1)
     messages = defaultdict(list)
-    unique_sources = np.unique(source_nodes)
+
+
+    if isinstance(source_nodes, torch.Tensor):
+        # detach() 去掉梯度, cpu() 搬到内存, numpy() 转格式
+        source_nodes_cpu = source_nodes.detach().cpu().numpy()
+    else:
+        source_nodes_cpu = source_nodes
+
+    unique_sources = np.unique(source_nodes_cpu)
+
 
     for i in range(len(source_nodes)):
       messages[source_nodes[i]].append((source_message[i], edge_times[i]))
