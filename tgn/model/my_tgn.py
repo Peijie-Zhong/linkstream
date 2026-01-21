@@ -4,7 +4,7 @@ import torch
 from collections import defaultdict
 
 from tgn.utils.utils import MergeLayer
-from tgn.modules.memory import Memory
+from tgn.modules.my_memory import Memory
 from tgn.modules.message_aggregator import get_message_aggregator
 from tgn.modules.message_function import get_message_function
 from tgn.modules.memory_updater import get_memory_updater
