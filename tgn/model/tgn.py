@@ -23,9 +23,7 @@ class TGN(torch.nn.Module):
                memory_updater_type="gru",
                use_destination_embedding_in_message=False,
                use_source_embedding_in_message=False,
-               dyrep=False,
-               # additional parameters can be added here
-               num_communities=5
+               dyrep=False
                ):
     super(TGN, self).__init__()
 
@@ -46,10 +44,7 @@ class TGN(torch.nn.Module):
     self.use_destination_embedding_in_message = use_destination_embedding_in_message
     self.use_source_embedding_in_message = use_source_embedding_in_message
     self.dyrep = dyrep
-    
-    # my changes
-    self.num_communities = num_communities
-    # end my changes
+  
 
     self.use_memory = use_memory
     self.time_encoder = TimeEncode(dimension=self.n_node_features)

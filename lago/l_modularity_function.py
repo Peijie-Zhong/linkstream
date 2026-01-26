@@ -132,12 +132,14 @@ def _get_communities_mmes(
     linkstream: LinkStream,
     communities_leaves: dict,
 ):
+    
     communities_expectations = {}
     for commu, leaves in communities_leaves.items():
         expectation = 0
         nodes_durations = get_nodes_durations(
             module_leaves=leaves,
         )
+
         community_nodes = set([leaf.node for leaf in leaves])
         for source, target in combinations_with_replacement(community_nodes, 2):
             geo_mean = (

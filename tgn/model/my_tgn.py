@@ -17,14 +17,14 @@ import torch.nn.functional as F
 
 class CommunityProjector(nn.Module):
     def __init__(self, embedding_dim, num_communities, dropout=0.1):
-        super().__init__()
-        self.mlp = nn.Sequential(
-            nn.Linear(embedding_dim, embedding_dim),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(embedding_dim, num_communities),
-            nn.Softmax(dim=-1) # 输出概率分布
-        )
+      super().__init__()
+      self.mlp = nn.Sequential(
+          nn.Linear(embedding_dim, embedding_dim),
+          nn.ReLU(),
+          nn.Dropout(dropout),
+          nn.Linear(embedding_dim, num_communities),
+          nn.Softmax(dim=-1)
+      )
     
     def forward(self, x):
         return self.mlp(x)
@@ -120,91 +120,78 @@ class TGN(torch.nn.Module):
                                                   num_communities=self.num_communities,
                                                   dropout=dropout)
 
-  def compute_temporal_embeddings(self, nodes, timestamps, n_neighbors=20):
-      """
-      通用 Embedding 计算函数。
-      不再区分 source/destination/negative，而是对传入的一批节点和时间计算 Embedding。
-      
-      Args:
-          nodes: [batch_size] 或 [any_size] 的节点 ID (numpy array 或 tensor)
-          timestamps: [batch_size] 对应的交互时间戳 (numpy array 或 tensor)
-          n_neighbors: 邻居采样数
-      Returns:
-          node_embedding: [batch_size, embedding_dim]
-      """
-      
-      # -------------------------------------------------------
-      # 1. 输入数据标准化 (Data Standardization)
-      # -------------------------------------------------------
-      # TGN 内部通常需要 Tensor，且位于正确的 device 上
-      if isinstance(nodes, np.ndarray):
-          nodes_tensor = torch.from_numpy(nodes).long().to(self.device)
-      else:
-          nodes_tensor = nodes.long().to(self.device)
+  def compute_temporal_embeddings(self, source_nodes, destination_nodes, edge_times, edge_idxs, n_neighbors=20):
+      n_samples = len(source_nodes)
+      nodes = np.concatenate([source_nodes, destination_nodes])
+      timestamps = np.concatenate([edge_times, edge_times])
 
-      if isinstance(timestamps, np.ndarray):
-          timestamps_tensor = torch.from_numpy(timestamps).float().to(self.device)
-      else:
-          timestamps_tensor = timestamps.float().to(self.device)
-          
-      # 为了配合 embedding_module 的接口，这里还需要保留 numpy 版本的 nodes
-      # 因为 neighbor_finder 通常操作 numpy 数组
-      nodes_numpy = nodes.cpu().numpy() if isinstance(nodes, torch.Tensor) else nodes
-      timestamps_numpy = timestamps.cpu().numpy() if isinstance(timestamps, torch.Tensor) else timestamps
-
-      # -------------------------------------------------------
-      # 2. 记忆读取与时间差计算 (Memory Retrieval & Time Diffs)
-      # -------------------------------------------------------
       memory = None
       time_diffs = None
 
       if self.use_memory:
-        # A. 处理 Memory 更新 (仅在 Batch 开始时触发一次)
-        # 如果之前的 Batch 留下了 Message，这里会先把它们应用到 Memory 上
         if self.memory_update_at_start:
-          # 注意：这里传入的是全量节点 range(n_nodes)，因为 update 可能涉及任何节点
           memory, last_update = self.get_updated_memory(list(range(self.n_nodes)),
                                                         self.memory.messages)
         else:
-          # 如果不更新，直接读取当前状态
           memory = self.memory.get_memory(list(range(self.n_nodes)))
           last_update = self.memory.last_update
 
-        # B. 计算 Time Diffs (当前交互时间 - 上次记忆更新时间)
-        # 这是 TGN 处理时间间隔特征的关键
-        
-        # 获取传入节点的上次更新时间
-        last_update_of_nodes = last_update[nodes_tensor].float().to(self.device)
-        
-        # 计算差值
-        time_diffs = timestamps_tensor - last_update_of_nodes
-        
-        # 归一化 (Normalization)
-        # 使用源节点的统计量 (mean_time_shift_src) 作为通用标准
-        # 在原代码中 src/dst/neg 分别处理，这里统一视为"参与交互的节点"
-        time_diffs = (time_diffs - self.mean_time_shift) / self.std_time_shift
+        source_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[source_nodes].long()
+        source_time_diffs = ((source_time_diffs - self.mean_time_shift) / self.std_time_shift)
+        destination_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[destination_nodes].long()
+        destination_time_diffs = ((destination_time_diffs - self.mean_time_shift) / self.std_time_shift)
 
-      # -------------------------------------------------------
-      # 3. 调用核心嵌入模块 (Embedding Module)
-      # -------------------------------------------------------
-      # 这一步执行图注意力 (GAT) 或 图卷积
-      # 注意：self.embedding_module 内部需要 numpy 格式的 nodes 来做邻居采样
+        time_diffs = torch.cat([source_time_diffs, destination_time_diffs], dim=0)
+
       node_embedding = self.embedding_module.compute_embedding(
           memory=memory,
-          source_nodes=nodes_numpy,     # 传入 numpy 用于采样
-          timestamps=timestamps_numpy,  # 传入 numpy 用于采样
+          source_nodes=nodes,     # 传入 numpy 用于采样
+          timestamps=timestamps,  # 传入 numpy 用于采样
           n_layers=self.n_layers,
           n_neighbors=n_neighbors,
           time_diffs=time_diffs         # 传入 Tensor 用于特征拼接
       )
-      return node_embedding
 
+      source_node_embedding = node_embedding[:n_samples]
+      destination_node_embedding = node_embedding[n_samples:]
+      
+      if self.use_memory:
+        if self.memory_update_at_start:
+          self.update_memory(nodes, self.memory.messages)
+          assert torch.allclose(memory[nodes], self.memory.get_memory(nodes), atol=1e-5), \
+          "Something wrong in how the memory was updated" 
+          self.memory.clear_messages(nodes)
+        unique_sources, source_id_to_message = self.get_raw_messages(source_nodes,
+                                                                     source_node_embedding,
+                                                                     destination_nodes,
+                                                                     destination_node_embedding,
+                                                                     edge_times, edge_idxs)
+        unique_destinations, destination_id_to_message = self.get_raw_messages(destination_nodes,
+                                                                             destination_node_embedding,
+                                                                             source_nodes,
+                                                                             source_node_embedding,
+                                                                             edge_times, edge_idxs)
+        if self.memory_update_at_start:
+          self.memory.store_raw_messages(unique_sources, source_id_to_message)
+          self.memory.store_raw_messages(unique_destinations, destination_id_to_message)
+        else: 
+          self.update_memory(unique_sources, source_id_to_message)
+          self.update_memory(unique_destinations, destination_id_to_message)
 
-  def compute_community_prob(self, nodes, timestamps, n_neighbors=20):
-      embeddings = self.compute_temporal_embeddings(nodes, timestamps, n_neighbors)
-      return self.community_projector(embeddings)
+        if self.dyrep:
+          source_node_embedding = memory[source_nodes]
+          destination_node_embedding = memory[destination_nodes]
+
+      return source_node_embedding, destination_node_embedding
+
+  def compute_community_prob(self, source_nodes, destination_nodes, edge_times, n_neighbors=20):
+      source_node_embedding, destination_node_embedding = self.compute_temporal_embeddings(
+          source_nodes, destination_nodes, edge_times, edge_idxs=None, n_neighbors=n_neighbors
+      )
+      source_community_prob = self.community_projector(source_node_embedding)
+      destination_community_prob = self.community_projector(destination_node_embedding)
+      return source_community_prob, destination_community_prob
   
-
   def update_memory(self, nodes, messages):
     # Aggregate messages for the same nodes
     unique_nodes, unique_messages, unique_timestamps = \
@@ -221,9 +208,7 @@ class TGN(torch.nn.Module):
   def get_updated_memory(self, nodes, messages):
     # Aggregate messages for the same nodes
     unique_nodes, unique_messages, unique_timestamps = \
-      self.message_aggregator.aggregate(
-        nodes,
-        messages)
+      self.message_aggregator.aggregate(nodes, messages)
 
     if len(unique_nodes) > 0:
       unique_messages = self.message_function.compute_message(unique_messages)
@@ -236,8 +221,7 @@ class TGN(torch.nn.Module):
 
   def get_raw_messages(self, source_nodes, source_node_embedding, destination_nodes,
                        destination_node_embedding, edge_times, edge_idxs):
-    edge_times = edge_times.float().to(self.device)
-    #edge_times = torch.from_numpy(edge_times).float().to(self.device)
+    edge_times = torch.from_numpy(edge_times).float().to(self.device)
     edge_features = self.edge_raw_features[edge_idxs]
 
     source_memory = self.memory.get_memory(source_nodes) if not \
@@ -253,15 +237,7 @@ class TGN(torch.nn.Module):
                                 source_time_delta_encoding],
                                dim=1)
     messages = defaultdict(list)
-
-
-    if isinstance(source_nodes, torch.Tensor):
-        # detach() 去掉梯度, cpu() 搬到内存, numpy() 转格式
-        source_nodes_cpu = source_nodes.detach().cpu().numpy()
-    else:
-        source_nodes_cpu = source_nodes
-
-    unique_sources = np.unique(source_nodes_cpu)
+    unique_sources = np.unique(source_nodes)
 
 
     for i in range(len(source_nodes)):
