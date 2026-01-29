@@ -175,6 +175,11 @@ class TGN(torch.nn.Module):
           self.memory.store_raw_messages(unique_sources, source_id_to_message)
           self.memory.store_raw_messages(unique_destinations, destination_id_to_message)
         else: 
+          '''
+          merged = merge_messages(source_id_to_message, destination_id_to_message)
+          unique_nodes = union(unique_sources, unique_destinations)
+          self.update_memory(unique_nodes, merged)
+          '''
           self.update_memory(unique_sources, source_id_to_message)
           self.update_memory(unique_destinations, destination_id_to_message)
 
@@ -184,9 +189,9 @@ class TGN(torch.nn.Module):
 
       return source_node_embedding, destination_node_embedding
 
-  def compute_community_prob(self, source_nodes, destination_nodes, edge_times, n_neighbors=20):
+  def compute_community_prob(self, source_nodes, destination_nodes, edge_times, edge_idxs, n_neighbors=20):
       source_node_embedding, destination_node_embedding = self.compute_temporal_embeddings(
-          source_nodes, destination_nodes, edge_times, edge_idxs=None, n_neighbors=n_neighbors
+          source_nodes, destination_nodes, edge_times, edge_idxs, n_neighbors=n_neighbors
       )
       source_community_prob = self.community_projector(source_node_embedding)
       destination_community_prob = self.community_projector(destination_node_embedding)
@@ -195,14 +200,11 @@ class TGN(torch.nn.Module):
   def update_memory(self, nodes, messages):
     # Aggregate messages for the same nodes
     unique_nodes, unique_messages, unique_timestamps = \
-      self.message_aggregator.aggregate(
-        nodes,
-        messages)
+      self.message_aggregator.aggregate(nodes, messages)
     if len(unique_nodes) > 0:
       unique_messages = self.message_function.compute_message(unique_messages)
     # Update the memory with the aggregated messages
-    self.memory_updater.update_memory(unique_nodes, unique_messages,
-                                      timestamps=unique_timestamps)
+    self.memory_updater.update_memory(unique_nodes, unique_messages, timestamps=unique_timestamps)
     
 
   def get_updated_memory(self, nodes, messages):
@@ -222,6 +224,7 @@ class TGN(torch.nn.Module):
   def get_raw_messages(self, source_nodes, source_node_embedding, destination_nodes,
                        destination_node_embedding, edge_times, edge_idxs):
     edge_times = torch.from_numpy(edge_times).float().to(self.device)
+
     edge_features = self.edge_raw_features[edge_idxs]
 
     source_memory = self.memory.get_memory(source_nodes) if not \
@@ -234,8 +237,7 @@ class TGN(torch.nn.Module):
       source_nodes), -1)
 
     source_message = torch.cat([source_memory, destination_memory, edge_features,
-                                source_time_delta_encoding],
-                               dim=1)
+                                source_time_delta_encoding],dim=1)
     messages = defaultdict(list)
     unique_sources = np.unique(source_nodes)
 

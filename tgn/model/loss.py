@@ -2,16 +2,10 @@ import torch
 from typing import Dict, Tuple
 
 
-def longitudinal_modularity_loss(p_src, p_dst, 
-                                 src, dst,
-                                 delta_src, delta_dst,
-                                 A_base, S_base, global_degree,
-                                 m, total_duration, p_prev,
-                                 csc_norm = "l2",
-                                 obs_weight=1.0,
-                                 null_weight=1.0,
-                                 csc_weight=1.0,
-                                 collapse_weight=0.1,
+def longitudinal_modularity_loss(p_src, p_dst, src, dst, delta_src, delta_dst,
+                                 A_base, S_base, global_degree,m, total_duration, 
+                                 p_prev, csc_norm = "l2", obs_weight=1.0,
+                                 null_weight=1.0, csc_weight=1.0, collapse_weight=0.1,
                                  conf_weight=0.1):
     device = p_src.device
     B = p_src.size(0)
@@ -25,7 +19,8 @@ def longitudinal_modularity_loss(p_src, p_dst,
         for i in range(node_ids.numel()):
             u = int(node_ids[i].item())
             dt = deltas[i]
-            if dt.numel() <= 0:
+            if dt.item() <= 0:
+                print("Warning: non-positive time delta encountered:", dt.item())
                 continue
             dt_val = dt.to(dtype=probs.dtype)
             inc = probs[i] * dt_val
@@ -40,14 +35,25 @@ def longitudinal_modularity_loss(p_src, p_dst,
 
     A0 = A_base.detach()
     S0 = S_base.detach()
-    S_used = S0.clone()
+    dtype = S0.dtype
+    DeltaS = torch.zeros_like(S0)  # [K]
     for u, delta_a_u in delta_a_nodes.items():
-        ku = global_degree[u]
-        corr = ku * (torch.sqrt(A0[u] + delta_a_u) - torch.sqrt(A0[u]))
-        S_used = S_used + corr
+        ku = global_degree[u].to(dtype=dtype)  # scalar (ensure dtype)
+        # A0[u] : [K], delta_a_u : [K]
+        # ΔS_u = k_u( sqrt(A0+ΔA) - sqrt(A0) )
+        DeltaS = DeltaS + ku * (torch.sqrt(A0[u] + delta_a_u) - torch.sqrt(A0[u]))
 
-    denom = max(2.0 * float(m) * total_duration ** 0.5, 1)
-    loss_null = S_used.pow(2).sum() / denom
+    # ΔF = ||S0+ΔS||^2 - ||S0||^2 = 2<S0,ΔS> + ||ΔS||^2
+    delta_energy = 2.0 * (S0 * DeltaS).sum() + (DeltaS * DeltaS).sum()
+
+    denom = max(2.0 * float(m) * total_duration, 1.0)
+    loss_null = delta_energy / denom
+    
+    extra = {
+        "DeltaS": DeltaS.detach(),          # 仅用于打印
+        "delta_energy": delta_energy.detach()
+    }
+    
 
     p_prev_det = p_prev.detach()
     temp_prev: Dict[int, torch.Tensor] = {}
@@ -89,7 +95,31 @@ def longitudinal_modularity_loss(p_src, p_dst,
 
     loss = obs_weight * loss_obs + null_weight * loss_null + csc_weight * loss_csc + \
         collapse_weight * loss_balance + conf_weight * loss_conf
-    loss_components = torch.stack([loss_obs.detach().sum(), loss_null.detach(), loss_csc.detach(), loss_balance.detach(), loss_conf.detach()])
+    
+    
+    # 现有：loss_obs, loss_null, loss_csc, loss_balance, loss_conf 都是带图的
+    terms_raw = {
+        "obs": loss_obs,
+        "null": loss_null,
+        "csc": loss_csc,
+        "balance": loss_balance,
+        "conf": loss_conf,
+    }
 
-    return loss, last_p_nodes, loss_components, delta_a_nodes
+    # 你原来的日志用的 detach 组件继续保留
+    loss_components = torch.stack([
+        loss_obs.detach(),
+        loss_null.detach(),
+        loss_csc.detach(),
+        loss_balance.detach(),
+        loss_conf.detach(),
+    ])
 
+
+    loss_components = torch.stack([loss_obs.detach().sum(), 
+                                   loss_null.detach(), 
+                                   loss_csc.detach(), 
+                                   loss_balance.detach(), 
+                                   loss_conf.detach()])
+
+    return loss, last_p_nodes, loss_components, delta_a_nodes, terms_raw, extra

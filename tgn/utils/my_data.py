@@ -14,11 +14,11 @@ class Data:
     self.n_unique_nodes = len(self.unique_nodes)
 
 
-def get_data(dataset_name):
+def get_data(dataset_name, randomize_features=True):
   DEFAULT_DIM = 16
   ### Load data
   graph_df = pd.read_csv('./data/{}.csv'.format(dataset_name))
-  
+
   sources = graph_df.source.values
   destinations = graph_df.destination.values
   edge_idxs = graph_df.idx.values
@@ -44,12 +44,12 @@ def get_data(dataset_name):
       print(f"cannot find node feature: {node_feat_path}), use zero vector(dim={DEFAULT_DIM})...")
       node_features = np.zeros((num_nodes, DEFAULT_DIM), dtype=np.float32)
 
-
-
   full_data = Data(sources, destinations, timestamps, edge_idxs)
 
   print("The dataset has {} interactions, involving {} different nodes".format(full_data.n_interactions,
                                                                       full_data.n_unique_nodes))
+
+  
   return node_features, edge_features, full_data
 
 def compute_time_statistics(sources, destinations, timestamps):
