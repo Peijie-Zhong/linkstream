@@ -156,8 +156,6 @@ def get_data(dataset_name, different_new_nodes_between_val_and_test=False, rando
   return node_features, edge_features, full_data, train_data, val_data, test_data, \
          new_node_val_data, new_node_test_data
 
-"""
-The old version of compute_time_statistics is kept for reference.
 
 def compute_time_statistics(sources, destinations, timestamps):
   last_timestamp_sources = dict()
@@ -184,38 +182,3 @@ def compute_time_statistics(sources, destinations, timestamps):
   std_time_shift_dst = np.std(all_timediffs_dst)
 
   return mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst
-
-"""
-def compute_time_statistics(sources, destinations, timestamps):
-  last_timestamp = dict()
-  all_timediffs = []
-
-  for k in range(len(sources)):
-      source_id = sources[k]
-      dest_id = destinations[k]
-      c_timestamp = timestamps[k]
-
-      # --- 处理 Source 节点 ---
-      if source_id not in last_timestamp:
-          last_timestamp[source_id] = 0
-      
-      # 计算该节点距离上次交互过了多久
-      all_timediffs.append(c_timestamp - last_timestamp[source_id])
-      
-      # 更新该节点的最新时间
-      last_timestamp[source_id] = c_timestamp
-
-      # --- 处理 Destination 节点 ---
-      if dest_id not in last_timestamp:
-          last_timestamp[dest_id] = 0
-          
-      all_timediffs.append(c_timestamp - last_timestamp[dest_id])
-      last_timestamp[dest_id] = c_timestamp
-
-  # 2. 计算全局统计量
-  mean_time_shift = np.mean(all_timediffs)
-  std_time_shift = np.std(all_timediffs)
-
-  # 3. 返回结果 (为了兼容 TGN 原始接口的解包操作，返回 4 个值)
-  # 这样 TGN 里的 self.mean_time_shift_src 和 self.mean_time_shift_dst 都会被赋值为同一个全局均值
-  return mean_time_shift, std_time_shift

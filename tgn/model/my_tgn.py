@@ -36,8 +36,8 @@ class TGN(torch.nn.Module):
                memory_update_at_start=True, message_dimension=100,
                memory_dimension=500, embedding_module_type="graph_attention",
                message_function="mlp",
-               mean_time_shift=0, std_time_shift=1,
-               n_neighbors=None, aggregator_type="last",
+               mean_time_shift=0, std_time_shift=1, mean_time_shift_dst=0, 
+               std_time_shift_dst=1, n_neighbors=None, aggregator_type="last",
                memory_updater_type="gru",
                use_destination_embedding_in_message=False,
                use_source_embedding_in_message=False,
@@ -75,6 +75,7 @@ class TGN(torch.nn.Module):
 
     self.mean_time_shift = mean_time_shift
     self.std_time_shift = std_time_shift
+
 
     if self.use_memory:
       self.memory_dimension = memory_dimension
@@ -158,8 +159,7 @@ class TGN(torch.nn.Module):
       if self.use_memory:
         if self.memory_update_at_start:
           self.update_memory(nodes, self.memory.messages)
-          assert torch.allclose(memory[nodes], self.memory.get_memory(nodes), atol=1e-5), \
-          "Something wrong in how the memory was updated" 
+          assert torch.allclose(memory[nodes], self.memory.get_memory(nodes), atol=1e-5), "Something wrong in how the memory was updated" 
           self.memory.clear_messages(nodes)
         unique_sources, source_id_to_message = self.get_raw_messages(source_nodes,
                                                                      source_node_embedding,
