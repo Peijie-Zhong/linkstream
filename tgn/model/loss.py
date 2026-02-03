@@ -2,78 +2,30 @@ import torch
 from typing import Dict, Tuple
 import logging
 
-def longitudinal_modularity_loss(p_src, p_dst, src, dst, delta_src, delta_dst,
+def longitudinal_modularity_loss(p_src, p_dst, src, dst, delta_a_nodes,
                                  A_base, S_base, global_degree,m, total_duration, 
-                                 p_prev, csc_norm = "l2", obs_weight=1.0,
+                                 p_prev, csc_norm="l2", obs_weight=1.0,
                                  null_weight=1.0, csc_weight=1.0, collapse_weight=0.1,
                                  conf_weight=0.1):
     device = p_src.device
     B = p_src.size(0)
-
+    # observation loss
     loss_obs = -(p_src * p_dst).sum(dim=1).mean()
+    # null model loss
+    eps = 1e-12
+    A0 = A_base.detach()   # [N,K] baseline A_old
+    S0 = S_base.detach()   # [K]   baseline S_old
 
-    delta_a_nodes: Dict[int, torch.Tensor] = {}
-    last_p_nodes: Dict[int, torch.Tensor] = {}
-
-    def _accumulate(node_ids: torch.Tensor, probs: torch.Tensor, deltas: torch.Tensor):
-        K = probs.size(1)
-        
-        for i in range(node_ids.numel()):
-            u = int(node_ids[i].item())
-            dt = deltas[i]
-            if dt.item() <= 0:
-                logging.warning(f"Warning: non-positive time delta encountered {dt.item()} at node {u}, skipping accumulation.")
-                continue
-            dt_val = dt.to(dtype=probs.dtype)
-
-            inc = (probs[i]) * dt_val
-            if u in delta_a_nodes:
-                delta_a_nodes[u] = delta_a_nodes[u] + inc
-            else:
-                delta_a_nodes[u] = inc
-            last_p_nodes[u] = probs[i]
-
-    _accumulate(src, p_src, delta_src)
-    _accumulate(dst, p_dst, delta_dst)
-
-    A0 = A_base.detach()
-    S0 = S_base.detach()
-    S_used = S0.clone()
-    for u, delta_a_u in delta_a_nodes.items():
+    S_corr = torch.zeros_like(S0)  # [K]
+    for u, dA_u in delta_a_nodes.items():
         ku = global_degree[u]
+        base = A0[u].clamp_min(eps)               # [K]
+        newv = (A0[u] + dA_u).clamp_min(eps)      # [K]
+        S_corr = S_corr + ku * (torch.sqrt(newv) - torch.sqrt(base))
 
-        if (A0[u] + delta_a_u < 0).any().item():
-            print("NEG at u", u, "min", (A0[u] + delta_a_u).min().item(), "A0min", A0[u].min().item(), "deltamin", delta_a_u.min().item())
+    S_used = S0 + S_corr
+    loss_null = (S_used.sum())**2 / (4.0 * float(m)**2 * total_duration)
 
-        if (not torch.isfinite(A0[u]).all()) or (not torch.isfinite(A0[u] + delta_a_u).all()):
-            logging.warning(f"NaN/Inf in A0 or A0+delta at node {u}, skip")
-            continue
-        corr = ku * (torch.sqrt(A0[u] + delta_a_u) - torch.sqrt(A0[u]))
-        S_used = S_used + corr
-
-    denom = 2.0 * float(m) * total_duration
-    loss_null = S_used.pow(2).sum() / denom
-    '''
-    dtype = S0.dtype
-    DeltaS = torch.zeros_like(S0)  # [K]
-    for u, delta_a_u in delta_a_nodes.items():
-        ku = global_degree[u].to(dtype=dtype)  # scalar (ensure dtype)
-        # A0[u] : [K], delta_a_u : [K]
-        # ΔS_u = k_u( sqrt(A0+ΔA) - sqrt(A0) )
-        DeltaS = DeltaS + ku * (torch.sqrt(A0[u] + delta_a_u) - torch.sqrt(A0[u]))
-
-    # ΔF = ||S0+ΔS||^2 - ||S0||^2 = 2<S0,ΔS> + ||ΔS||^2
-    delta_energy = 2.0 * (S0 * DeltaS).sum() + (DeltaS * DeltaS).sum()
-
-    denom = max(2.0 * float(m) * total_duration, 1.0)
-    loss_null = delta_energy / denom
-    
-    extra = {
-        "DeltaS": DeltaS.detach(),          # 仅用于打印
-        "delta_energy": delta_energy.detach()
-    }
-    '''
-    
 
     p_prev_det = p_prev.detach()
     temp_prev: Dict[int, torch.Tensor] = {}
@@ -111,7 +63,7 @@ def longitudinal_modularity_loss(p_src, p_dst, src, dst, delta_src, delta_dst,
     loss_balance = torch.sum(q * torch.log((q + eps) / uniform))
 
     entropy = -(p_all * (p_all + eps).log()).sum(dim=1).mean()  # scalar
-    loss_conf = entropy  
+    loss_conf = entropy
 
     loss = obs_weight * loss_obs + null_weight * loss_null + csc_weight * loss_csc + \
         collapse_weight * loss_balance + conf_weight * loss_conf
@@ -139,5 +91,5 @@ def longitudinal_modularity_loss(p_src, p_dst, src, dst, delta_src, delta_dst,
                                    loss_balance.detach(), 
                                    loss_conf.detach()])
 
-    return loss, last_p_nodes, loss_components, delta_a_nodes, terms_raw
+    return loss, loss_components, terms_raw
 #, extra
