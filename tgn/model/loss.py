@@ -5,8 +5,7 @@ import logging
 def longitudinal_modularity_loss(p_src, p_dst, src, dst, delta_a_nodes,
                                  A_base, S_base, global_degree,m, total_duration, 
                                  p_prev, csc_norm="l2", obs_weight=1.0,
-                                 null_weight=1.0, csc_weight=1.0, collapse_weight=0.1,
-                                 conf_weight=0.1):
+                                 null_weight=1.0, csc_weight=1.0, collapse_weight=0.1):
     device = p_src.device
     B = p_src.size(0)
     # observation loss
@@ -17,6 +16,8 @@ def longitudinal_modularity_loss(p_src, p_dst, src, dst, delta_a_nodes,
     S0 = S_base.detach()   # [K]   baseline S_old
 
     S_corr = torch.zeros_like(S0)  # [K]
+
+
     for u, dA_u in delta_a_nodes.items():
         ku = global_degree[u]
         base = A0[u].clamp_min(eps)               # [K]
@@ -24,7 +25,7 @@ def longitudinal_modularity_loss(p_src, p_dst, src, dst, delta_a_nodes,
         S_corr = S_corr + ku * (torch.sqrt(newv) - torch.sqrt(base))
 
     S_used = S0 + S_corr
-    loss_null = (S_used.sum())**2 / (4.0 * float(m)**2 * total_duration)
+    loss_null = (S_used.pow(2).sum()) / (4.0 * float(m)**2 * total_duration)
 
 
     p_prev_det = p_prev.detach()
@@ -54,42 +55,23 @@ def longitudinal_modularity_loss(p_src, p_dst, src, dst, delta_a_nodes,
 
     loss_csc = torch.stack(csc_terms).mean() if len(csc_terms) > 0 else torch.zeros((), device=device, dtype=p_src.dtype)
 
-    p_all = torch.cat([p_src, p_dst], dim=0)  # [2B, K]
-    q = p_all.mean(dim=0)                     # [K]
-    K = q.numel()
-    eps = 1e-8
-    uniform = torch.full_like(q, 1.0 / K)
+    loss = obs_weight * loss_obs + null_weight * loss_null + csc_weight * loss_csc 
 
-    loss_balance = torch.sum(q * torch.log((q + eps) / uniform))
-
-    entropy = -(p_all * (p_all + eps).log()).sum(dim=1).mean()  # scalar
-    loss_conf = entropy
-
-    loss = obs_weight * loss_obs + null_weight * loss_null + csc_weight * loss_csc + \
-        collapse_weight * loss_balance + conf_weight * loss_conf
-    
-    
     terms_raw = {
         "obs": loss_obs,
         "null": loss_null,
-        "csc": loss_csc,
-        "balance": loss_balance,
-        "conf": loss_conf,
+        "csc": loss_csc
     }
     loss_components = torch.stack([
         loss_obs.detach(),
         loss_null.detach(),
-        loss_csc.detach(),
-        loss_balance.detach(),
-        loss_conf.detach(),
+        loss_csc.detach()
     ])
 
 
     loss_components = torch.stack([loss_obs.detach().sum(), 
                                    loss_null.detach(), 
-                                   loss_csc.detach(), 
-                                   loss_balance.detach(), 
-                                   loss_conf.detach()])
+                                   loss_csc.detach()])
 
     return loss, loss_components, terms_raw
 #, extra

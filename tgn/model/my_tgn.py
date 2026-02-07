@@ -17,18 +17,42 @@ import torch.nn.functional as F
 
 class CommunityProjector(nn.Module):
     def __init__(self, embedding_dim, num_communities, dropout=0.1):
-      super().__init__()
-      self.mlp = nn.Sequential(
-          nn.Linear(embedding_dim, embedding_dim),
-          nn.ReLU(),
-          nn.Dropout(dropout),
-          nn.Linear(embedding_dim, num_communities),
-          nn.Softmax(dim=-1)
-      )
-    
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(embedding_dim, num_communities),
+            nn.Softmax(dim=-1)
+        )
+
     def forward(self, x):
         return self.mlp(x)
     
+    
+class LearnableDirichletPrior(nn.Module):
+    def __init__(self, K: int, alpha0: float = 10.0, alpha_min: float = 1e-3):
+        super().__init__()
+        self.logits = nn.Parameter(torch.zeros(K))  # learn direction
+        self.alpha0 = float(alpha0)
+        self.alpha_min = float(alpha_min)
+
+    def alpha(self) -> torch.Tensor:
+        q = F.softmax(self.logits, dim=0)           # [K]
+        return self.alpha0 * q + self.alpha_min     # [K], >0
+
+    def forward(self, pi: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+        """
+        Return negative log-likelihood: -log Dir(pi | alpha).
+        pi: [K] (not necessarily perfectly normalized; we normalize inside)
+        """
+        pi = (pi + eps) / (pi.sum() + eps)
+        alpha = self.alpha()
+        alpha0 = alpha.sum()
+
+        nll = -((alpha - 1.0) * torch.log(pi.clamp_min(eps))).sum()
+        nll = nll + torch.lgamma(alpha).sum() - torch.lgamma(alpha0)
+        return nll
 
 class TGN(torch.nn.Module):
   def __init__(self, neighbor_finder, node_features, edge_features, device, n_layers=2,
@@ -43,7 +67,8 @@ class TGN(torch.nn.Module):
                use_source_embedding_in_message=False,
                dyrep=False,
                # additional parameters can be added here
-               num_communities=5
+               num_communities=5,
+               dirichlet_alpha = 1.0
                ):
     super().__init__()
 
@@ -120,6 +145,10 @@ class TGN(torch.nn.Module):
     self.community_projector = CommunityProjector(embedding_dim=self.embedding_dimension,
                                                   num_communities=self.num_communities,
                                                   dropout=dropout)
+    
+    self.dirichlet_prior = LearnableDirichletPrior(K=self.num_communities,
+                                                   alpha0=dirichlet_alpha,
+                                                   alpha_min=1e-3)
 
   def compute_temporal_embeddings(self, source_nodes, destination_nodes, edge_times, edge_idxs, n_neighbors=20):
       n_samples = len(source_nodes)
@@ -146,11 +175,11 @@ class TGN(torch.nn.Module):
 
       node_embedding = self.embedding_module.compute_embedding(
           memory=memory,
-          source_nodes=nodes,     # 传入 numpy 用于采样
-          timestamps=timestamps,  # 传入 numpy 用于采样
+          source_nodes=nodes,
+          timestamps=timestamps,
           n_layers=self.n_layers,
           n_neighbors=n_neighbors,
-          time_diffs=time_diffs         # 传入 Tensor 用于特征拼接
+          time_diffs=time_diffs
       )
 
       source_node_embedding = node_embedding[:n_samples]
