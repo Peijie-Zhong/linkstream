@@ -5,7 +5,7 @@ import logging
 def longitudinal_modularity_loss(p_src, p_dst, src, dst, delta_a_nodes,
                                  A_base, S_base, global_degree,m, total_duration, 
                                  p_prev, csc_norm="l2", obs_weight=1.0,
-                                 null_weight=1.0, csc_weight=1.0, collapse_weight=0.1):
+                                 null_weight=1.0, csc_weight=1.0):
     device = p_src.device
     B = p_src.size(0)
     # observation loss
@@ -14,10 +14,7 @@ def longitudinal_modularity_loss(p_src, p_dst, src, dst, delta_a_nodes,
     eps = 1e-12
     A0 = A_base.detach()   # [N,K] baseline A_old
     S0 = S_base.detach()   # [K]   baseline S_old
-
     S_corr = torch.zeros_like(S0)  # [K]
-
-
     for u, dA_u in delta_a_nodes.items():
         ku = global_degree[u]
         base = A0[u].clamp_min(eps)               # [K]

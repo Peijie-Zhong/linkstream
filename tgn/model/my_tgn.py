@@ -41,7 +41,7 @@ class LearnableDirichletPrior(nn.Module):
         q = F.softmax(self.logits, dim=0)           # [K]
         return self.alpha0 * q + self.alpha_min     # [K], >0
 
-    def forward(self, pi: torch.Tensor, eps: float = 1e-12) -> torch.Tensor:
+    def forward(self, pi: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
         """
         Return negative log-likelihood: -log Dir(pi | alpha).
         pi: [K] (not necessarily perfectly normalized; we normalize inside)

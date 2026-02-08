@@ -1,6 +1,6 @@
 import copy
 from itertools import combinations_with_replacement
-
+import numpy as np
 from lago.linkstream import LinkStream
 from lago.tools import (
     get_module_duration,
@@ -38,7 +38,7 @@ def longitudinal_modularity(
 
     ### 1 - Get nb links inside communities
     communities_nb_interactions = _get_communities_nb_interactions(linkstream)
-
+    print(f"community nb interaction:{communities_nb_interactions}")
     ### 2 - Get expectations values
     communities_expectations = {}
     if lex_type == "CM":
@@ -61,6 +61,7 @@ def longitudinal_modularity(
     ### 3 - Time penalty
     cscs = get_community_switch_counts(linkstream)
     time_penalty = -omega / (2 * linkstream.nb_edges) * cscs
+
 
     ### 4 - Aggregation
     lm_modularity = 0
@@ -124,8 +125,8 @@ def _get_communities_jmes(
             expectation += expected_value
 
         communities_expectations[commu] = expectation
-
     return communities_expectations
+
 
 
 def _get_communities_mmes(
@@ -139,7 +140,32 @@ def _get_communities_mmes(
         nodes_durations = get_nodes_durations(
             module_leaves=leaves,
         )
+        print(nodes_durations)
 
+        community_nodes = set([leaf.node for leaf in leaves])
+        numer = 0
+        for u in community_nodes:
+            numer += linkstream.degrees.get(u, 0) * (nodes_durations.get(u, 0))**0.5 
+        expectation = numer ** 2 / ((2 * linkstream.nb_edges) ** 2 * linkstream.network_duration)
+    
+        communities_expectations[commu] = expectation
+    
+
+    print(f"community expectations mme from @l_modularity_function.py:{communities_expectations}")
+    return communities_expectations
+
+
+"""
+def _get_communities_mmes(
+    linkstream: LinkStream,
+    communities_leaves: dict,
+):
+    communities_expectations = {}
+    for commu, leaves in communities_leaves.items():
+        expectation = 0
+        nodes_durations = get_nodes_durations(
+            module_leaves=leaves,
+        )
         community_nodes = set([leaf.node for leaf in leaves])
         for source, target in combinations_with_replacement(community_nodes, 2):
             geo_mean = (
@@ -168,12 +194,11 @@ def _get_communities_mmes(
                     * (geo_mean / linkstream.network_duration)
                     / (2 * linkstream.nb_edges) ** 2
                 )
-
             expectation += expected_value
-
         communities_expectations[commu] = expectation
+        print(f"community expectations mme from @l_modularity_function.py:{communities_expectations}")
     return communities_expectations
-
+"""
 
 def _get_communities_cmes(
     linkstream: LinkStream,

@@ -7,3 +7,4 @@ log/
 .venv/
 saved_models/
 saved_checkpoints/
+__pycache__/
