@@ -18,8 +18,8 @@ from typing import List
 
 import tensorflow.compat.v2 as tf
 
-from graph_embedding.dmon.layers.diffpool import DiffPooling
-from graph_embedding.dmon.layers.gcn import GCN
+from layers.diffpool import DiffPooling
+from layers.gcn import GCN
 
 
 def gcn_diffpool(inputs, channel_sizes):

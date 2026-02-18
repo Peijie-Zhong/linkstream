@@ -16,7 +16,7 @@
 """TODO(tsitsulin): add headers, tests, and improve style."""
 from typing import List
 import tensorflow.compat.v2 as tf
-from graph_embedding.dmon.layers.bilinear import Bilinear
+from layers.bilinear import Bilinear
 
 
 def deep_graph_infomax(inputs,  # pylint: disable=missing-function-docstring

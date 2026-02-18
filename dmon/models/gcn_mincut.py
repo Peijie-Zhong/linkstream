@@ -16,8 +16,8 @@
 """TODO(tsitsulin): add headers, tests, and improve style."""
 from typing import List
 import tensorflow.compat.v2 as tf
-from graph_embedding.dmon.layers.gcn import GCN
-from graph_embedding.dmon.layers.mincut import MincutPooling
+from layers.gcn import GCN
+from layers.mincut import MincutPooling
 
 
 def gcn_mincut(inputs,  # TODO(tsitsulin): improve signature and documentation pylint: disable=dangerous-default-value,missing-function-docstring

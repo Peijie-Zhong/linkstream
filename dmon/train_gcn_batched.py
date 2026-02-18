@@ -21,11 +21,11 @@ from sklearn.metrics import accuracy_score
 from sklearn.metrics import normalized_mutual_info_score
 import tensorflow.compat.v2 as tf
 
-from graph_embedding.dmon.models.multilayer_gcn import multilayer_gcn
-from graph_embedding.dmon.synthetic_data.graph_util import construct_knn_graph
-from graph_embedding.dmon.synthetic_data.overlapping_gaussians import line_gaussians
-from graph_embedding.dmon.utilities.batching import make_batch
-from graph_embedding.dmon.utilities.batching import random_batch
+from models.multilayer_gcn import multilayer_gcn
+from utilities.graph import construct_knn_graph
+from synthetic_data.overlapping_gaussians import line_gaussians
+from utilities.batching import make_batch
+from utilities.batching import random_batch
 
 tf.compat.v1.enable_v2_behavior()
 

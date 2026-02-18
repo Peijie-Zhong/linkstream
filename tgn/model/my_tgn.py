@@ -68,7 +68,8 @@ class TGN(torch.nn.Module):
                dyrep=False,
                # additional parameters can be added here
                num_communities=5,
-               dirichlet_alpha = 1.0
+               dirichlet_alpha = 1.0,
+               node_id_dim = 32
                ):
     super().__init__()
 
@@ -92,6 +93,15 @@ class TGN(torch.nn.Module):
     
     # my changes
     self.num_communities = num_communities
+
+    self.node_id_dim = int(node_id_dim)
+    if self.node_id_dim > 0:
+      self.node_id_embedding = nn.Embedding(self.n_nodes, self.node_id_dim)
+      nn.init.normal_(self.node_id_embedding.weight, mean=0.0, std=0.02)
+      self.node_id_merger = nn.Linear(self.embedding_dimension + self.node_id_dim,self.embedding_dimension)
+    else: 
+       self.node_id_embedding = None
+       self.node_id_merger = None
     # end my changes
 
     self.use_memory = use_memory
@@ -149,6 +159,19 @@ class TGN(torch.nn.Module):
     self.dirichlet_prior = LearnableDirichletPrior(K=self.num_communities,
                                                    alpha0=dirichlet_alpha,
                                                    alpha_min=1e-3)
+  def _augment_with_node_id(self, emb: torch.Tensor, node_ids: np.ndarray | torch.Tensor) -> torch.Tensor:
+     if self.node_id_embedding is None:
+        return emb
+     if isinstance(node_ids, np.ndarray):
+        node_ids_t = torch.from_numpy(node_ids).long().to(self.device)
+     else:
+        node_ids_t = node_ids.long().to(self.device)
+      
+     id_emb = self.node_id_embedding(node_ids_t)
+     merged = torch.cat([emb,id_emb],dim=1)
+
+     return self.node_id_merger(merged)
+
 
   def compute_temporal_embeddings(self, source_nodes, destination_nodes, edge_times, edge_idxs, n_neighbors=20):
       n_samples = len(source_nodes)
@@ -184,6 +207,7 @@ class TGN(torch.nn.Module):
 
       source_node_embedding = node_embedding[:n_samples]
       destination_node_embedding = node_embedding[n_samples:]
+
       
       if self.use_memory:
         if self.memory_update_at_start:
@@ -195,11 +219,7 @@ class TGN(torch.nn.Module):
                                                                      destination_nodes,
                                                                      destination_node_embedding,
                                                                      edge_times, edge_idxs)
-        unique_destinations, destination_id_to_message = self.get_raw_messages(destination_nodes,
-                                                                             destination_node_embedding,
-                                                                             source_nodes,
-                                                                             source_node_embedding,
-                                                                             edge_times, edge_idxs)
+        unique_destinations, destination_id_to_message = self.get_raw_messages(destination_nodes,destination_node_embedding,source_nodes,source_node_embedding,edge_times, edge_idxs)
         if self.memory_update_at_start:
           self.memory.store_raw_messages(unique_sources, source_id_to_message)
           self.memory.store_raw_messages(unique_destinations, destination_id_to_message)
@@ -215,7 +235,9 @@ class TGN(torch.nn.Module):
         if self.dyrep:
           source_node_embedding = memory[source_nodes]
           destination_node_embedding = memory[destination_nodes]
-
+        # add learnable node-id signal (per occurrence) to reduce cold-start collapse
+        source_node_embedding = self._augment_with_node_id(source_node_embedding, source_nodes)
+        destination_node_embedding = self._augment_with_node_id(destination_node_embedding, destination_nodes)
       return source_node_embedding, destination_node_embedding
 
   def compute_community_prob(self, source_nodes, destination_nodes, edge_times, edge_idxs, n_neighbors=20):
@@ -245,8 +267,8 @@ class TGN(torch.nn.Module):
       unique_messages = self.message_function.compute_message(unique_messages)
 
     updated_memory, updated_last_update = self.memory_updater.get_updated_memory(unique_nodes,
-                                                                                 unique_messages,
-                                                                                 timestamps=unique_timestamps)
+                                          unique_messages,
+                                          timestamps=unique_timestamps)
 
     return updated_memory, updated_last_update
 

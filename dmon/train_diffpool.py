@@ -22,9 +22,9 @@ import numpy as np
 from sklearn.metrics import normalized_mutual_info_score
 import tensorflow.compat.v2 as tf
 
-from graph_embedding.dmon.models.gcn_diffpool import gcn_diffpool
-from graph_embedding.dmon.synthetic_data.graph_util import construct_knn_graph
-from graph_embedding.dmon.synthetic_data.overlapping_gaussians import overlapping_gaussians
+from models.gcn_diffpool import gcn_diffpool
+from utilities.graph import construct_knn_graph
+from synthetic_data.overlapping_gaussians import overlapping_gaussians
 
 tf.compat.v1.enable_v2_behavior()
 

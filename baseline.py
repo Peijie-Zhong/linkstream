@@ -11,8 +11,6 @@ import matlab.engine
 import os
 
 
-
-
 def lago_community(link_stream_file, nb_iter, is_stream_graph=False, info_logging=False):
     '''
     :return: dynamic communities found by LAGO
@@ -46,15 +44,10 @@ def lago_community(link_stream_file, nb_iter, is_stream_graph=False, info_loggin
                 {my_linkstream.network_duration} time steps, \
                 of which only {my_linkstream.nb_timesteps} contain activity.")
         print(f"{len(dynamic_communities)} dynamic communities have been found")
-        
-
         print(f"Longitudinal Modularity score of {long_mod_score} ")
-
     return dynamic_communities, long_mod_score, end_time - start_time
 
     
-
-
 def louvain(file_path: str) -> str:
     file_path = Path(file_path)
     if not file_path.exists():
@@ -100,10 +93,10 @@ def louvain(file_path: str) -> str:
     df["source_commu"] = df["source"].map(node2comm).astype("Int64")
     df["destination_commu"] = df["destination"].map(node2comm).astype("Int64")
 
-    out_dir = file_path.parent / f"louvain_{file_path.stem}"
+    out_dir = Path("result") 
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    out_path = out_dir / file_path.name
+    out_path = out_dir / (file_path.name)
     df.to_csv(out_path, index=False)
 
     return str(out_path)

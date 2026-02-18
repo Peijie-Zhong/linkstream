@@ -27,7 +27,7 @@ Example execution to reproduce the results from the paper.
 ------
 # From google-research/
 python3 -m graph_embedding.dmon.train \
---graph_path=graph_embedding/dmon/data/cora.npz --dropout_rate=0.5
+--graph_path=/data/cora.npz --dropout_rate=0.5
 """
 from typing import Tuple
 from absl import app
@@ -37,10 +37,10 @@ import scipy.sparse
 from scipy.sparse import base
 import sklearn.metrics
 import tensorflow.compat.v2 as tf
-from graph_embedding.dmon import dmon
-from graph_embedding.dmon import gcn
-from graph_embedding.dmon import metrics
-from graph_embedding.dmon import utils
+import dmon
+import gcn
+import metrics
+import utils
 tf.compat.v1.enable_v2_behavior()
 
 FLAGS = flags.FLAGS

@@ -51,14 +51,30 @@ class GCN(tf.keras.layers.Layer):
   def build(self, input_shape):
     """Builds the Keras model according to the input shape."""
     self.n_features = input_shape[0][-1]
-    self.kernel = self.add_variable(
-        'kernel', shape=(self.n_features, self.n_channels))
-    self.bias = self.add_variable('bias', shape=(self.n_channels,))
+
+    self.kernel = self.add_weight(
+        name="kernel",
+        shape=(self.n_features, self.n_channels),
+        initializer="glorot_uniform",
+        trainable=True,
+    )
+    self.bias = self.add_weight(
+        name="bias",
+        shape=(self.n_channels,),
+        initializer="zeros",
+        trainable=True,
+    )
+
     if self.skip_connection:
-      self.skip_weight = self.add_variable(
-          'skip_weight', shape=(self.n_channels,))
+        self.skip_weight = self.add_weight(
+            name="skip_weight",
+            shape=(self.n_channels,),
+            initializer="ones",
+            trainable=True,
+        )
     else:
-      self.skip_weight = 0
+        self.skip_weight = 0
+
     super().build(input_shape)
 
   def call(self, inputs):

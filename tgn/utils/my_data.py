@@ -14,7 +14,8 @@ class Data:
     self.n_unique_nodes = len(self.unique_nodes)
 
 
-def get_data(dataset_name, randomize_features=True):
+def get_data(dataset_name,
+             node_embedding_method):
   DEFAULT_DIM = 16
   graph_df = pd.read_csv('./data/{}.csv'.format(dataset_name))
 
@@ -40,13 +41,27 @@ def get_data(dataset_name, randomize_features=True):
       print(f"cannot find node feature: {node_feat_path}")
       node_features = np.load(node_feat_path)
   else:
+    if node_embedding_method == "all-zero":
       print(f"cannot find node feature: {node_feat_path}), use zero vector(dim={DEFAULT_DIM})...")
+      print("Use all-zero init. ")
       node_features = np.zeros((num_nodes, DEFAULT_DIM), dtype=np.float32)
+    elif node_embedding_method == "random":
+       print("Use random init. ")
+       rng = np.random.default_rng(42)
+       node_features = rng.standard_normal((num_nodes, DEFAULT_DIM).astype(np.float32))
+    elif node_embedding_method == "one-hot":
+       print("Use one-hot init. ")
+       node_features = np.eye(num_nodes, dtype=np.float32)  
+    else:
+      raise ValueError(
+          f"Unsupported node_embedding_method: {node_embedding_method}. "
+          f"Expected one of {{'random', 'one-hot', 'all-zero'}}."
+      )
+    
 
   full_data = Data(sources, destinations, timestamps, edge_idxs)
 
-  print("The dataset has {} interactions, involving {} different nodes".format(full_data.n_interactions,
-                                                                      full_data.n_unique_nodes))
+  print("The dataset has {} interactions, involving {} different nodes".format(full_data.n_interactions,full_data.n_unique_nodes))
   return node_features, edge_features, full_data
 
 

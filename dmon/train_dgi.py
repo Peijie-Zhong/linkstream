@@ -22,10 +22,10 @@ from sklearn.metrics import accuracy_score
 from sklearn.metrics import normalized_mutual_info_score
 import tensorflow.compat.v2 as tf
 
-from graph_embedding.dmon.layers.gcn import GCN
-from graph_embedding.dmon.models.dgi import deep_graph_infomax
-from graph_embedding.dmon.synthetic_data.graph_util import construct_knn_graph
-from graph_embedding.dmon.synthetic_data.overlapping_gaussians import overlapping_gaussians
+from layers.gcn import GCN
+from models.dgi import deep_graph_infomax
+from utilities.graph import construct_knn_graph
+from synthetic_data.overlapping_gaussians import overlapping_gaussians
 
 tf.compat.v1.enable_v2_behavior()
 

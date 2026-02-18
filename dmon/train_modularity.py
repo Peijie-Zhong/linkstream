@@ -21,15 +21,15 @@ from absl import flags
 from sklearn.metrics import normalized_mutual_info_score
 import tensorflow.compat.v2 as tf
 
-from graph_embedding.dmon.models.gcn_modularity import gcn_modularity
-from graph_embedding.dmon.synthetic_data.overlapping_gaussians import circular_gaussians
-from graph_embedding.dmon.utilities.graph import construct_knn_graph
-from graph_embedding.dmon.utilities.graph import normalize_graph
-from graph_embedding.dmon.utilities.graph import scipy_to_tf
-from graph_embedding.dmon.utilities.metrics import conductance
-from graph_embedding.dmon.utilities.metrics import modularity
-from graph_embedding.dmon.utilities.metrics import precision
-from graph_embedding.dmon.utilities.metrics import recall
+from models.gcn_modularity import gcn_modularity
+from synthetic_data.overlapping_gaussians import circular_gaussians
+from utilities.graph import construct_knn_graph
+from utilities.graph import normalize_graph
+from utilities.graph import scipy_to_tf
+from utilities.metrics import conductance
+from utilities.metrics import modularity
+from utilities.metrics import precision
+from utilities.metrics import recall
 
 tf.compat.v1.enable_v2_behavior()
 

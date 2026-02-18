@@ -16,7 +16,7 @@
 """TODO(tsitsulin): add headers, tests, and improve style."""
 from typing import List
 import tensorflow.compat.v2 as tf  # pylint: disable=unused-import
-from graph_embedding.dmon.layers.gcn import GCN
+from layers.gcn import GCN
 
 
 def multilayer_gcn(inputs, channel_sizes):

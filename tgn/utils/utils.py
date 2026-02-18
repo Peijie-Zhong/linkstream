@@ -91,7 +91,8 @@ class RandEdgeSampler(object):
 def get_neighbor_finder(data, uniform, max_node_idx=None):
   max_node_idx = max(data.sources.max(), data.destinations.max()) if max_node_idx is None else max_node_idx
   adj_list = [[] for _ in range(max_node_idx + 1)]
-  for source, destination, edge_idx, timestamp in zip(data.sources, data.destinations,
+  for source, destination, edge_idx, timestamp in zip(data.sources,
+                                                      data.destinations,
                                                       data.edge_idxs,
                                                       data.timestamps):
     adj_list[source].append((destination, edge_idx, timestamp))
@@ -153,8 +154,7 @@ class NeighborFinder:
       np.int32)  # each entry in position (i,j) represent the interaction index of an interaction between user src_idx_l[i] and item neighbors[i,j] happening before cut_time_l[i]
 
     for i, (source_node, timestamp) in enumerate(zip(source_nodes, timestamps)):
-      source_neighbors, source_edge_idxs, source_edge_times = self.find_before(source_node,
-                                                   timestamp)  # extracts all neighbors, interactions indexes and timestamps of all interactions of user source_node happening before cut_time
+      source_neighbors, source_edge_idxs, source_edge_times = self.find_before(source_node,timestamp)  # extracts all neighbors, interactions indexes and timestamps of all interactions of user source_node happening before cut_time
 
       if len(source_neighbors) > 0 and n_neighbors > 0:
         if self.uniform:  # if we are applying uniform sampling, shuffles the data above before sampling

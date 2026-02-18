@@ -73,8 +73,7 @@ class GraphEmbedding(EmbeddingModule):
     self.use_memory = use_memory
     self.device = device
 
-  def compute_embedding(self, memory, source_nodes, timestamps, n_layers, n_neighbors=20, time_diffs=None,
-                        use_time_proj=True):
+  def compute_embedding(self, memory, source_nodes, timestamps, n_layers, n_neighbors=20, time_diffs=None, use_time_proj=True):
     """Recursive implementation of curr_layers temporal graph attention layers.
 
     src_idx_l [batch_size]: users / items input ids.
@@ -133,7 +132,9 @@ class GraphEmbedding(EmbeddingModule):
 
       edge_features = self.edge_features[edge_idxs, :]
 
-      mask = neighbors_torch == 0
+
+
+      mask = neighbors_torch == -1  # Peijie edit
 
       source_embedding = self.aggregate(n_layers, source_node_conv_embeddings,
                                         source_nodes_time_embedding,

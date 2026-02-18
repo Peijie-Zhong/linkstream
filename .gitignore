@@ -8,3 +8,5 @@ log/
 saved_models/
 saved_checkpoints/
 __pycache__/
+syn_data/
+results/
