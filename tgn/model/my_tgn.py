@@ -29,30 +29,7 @@ class CommunityProjector(nn.Module):
     def forward(self, x):
         return self.mlp(x)
     
-    
-class LearnableDirichletPrior(nn.Module):
-    def __init__(self, K: int, alpha0: float = 10.0, alpha_min: float = 1e-3):
-        super().__init__()
-        self.logits = nn.Parameter(torch.zeros(K))  # learn direction
-        self.alpha0 = float(alpha0)
-        self.alpha_min = float(alpha_min)
-
-    def alpha(self) -> torch.Tensor:
-        q = F.softmax(self.logits, dim=0)           # [K]
-        return self.alpha0 * q + self.alpha_min     # [K], >0
-
-    def forward(self, pi: torch.Tensor, eps: float = 1e-6) -> torch.Tensor:
-        """
-        Return negative log-likelihood: -log Dir(pi | alpha).
-        pi: [K] (not necessarily perfectly normalized; we normalize inside)
-        """
-        pi = (pi + eps) / (pi.sum() + eps)
-        alpha = self.alpha()
-        alpha0 = alpha.sum()
-
-        nll = -((alpha - 1.0) * torch.log(pi.clamp_min(eps))).sum()
-        nll = nll + torch.lgamma(alpha).sum() - torch.lgamma(alpha0)
-        return nll
+  
 
 class TGN(torch.nn.Module):
   def __init__(self, neighbor_finder, node_features, edge_features, device, n_layers=2,
@@ -67,9 +44,7 @@ class TGN(torch.nn.Module):
                use_source_embedding_in_message=False,
                dyrep=False,
                # additional parameters can be added here
-               num_communities=5,
-               dirichlet_alpha = 1.0,
-               node_id_dim = 32
+               num_communities=5
                ):
     super().__init__()
 
@@ -94,14 +69,6 @@ class TGN(torch.nn.Module):
     # my changes
     self.num_communities = num_communities
 
-    self.node_id_dim = int(node_id_dim)
-    if self.node_id_dim > 0:
-      self.node_id_embedding = nn.Embedding(self.n_nodes, self.node_id_dim)
-      nn.init.normal_(self.node_id_embedding.weight, mean=0.0, std=0.02)
-      self.node_id_merger = nn.Linear(self.embedding_dimension + self.node_id_dim,self.embedding_dimension)
-    else: 
-       self.node_id_embedding = None
-       self.node_id_merger = None
     # end my changes
 
     self.use_memory = use_memory
@@ -155,22 +122,7 @@ class TGN(torch.nn.Module):
     self.community_projector = CommunityProjector(embedding_dim=self.embedding_dimension,
                                                   num_communities=self.num_communities,
                                                   dropout=dropout)
-    
-    self.dirichlet_prior = LearnableDirichletPrior(K=self.num_communities,
-                                                   alpha0=dirichlet_alpha,
-                                                   alpha_min=1e-3)
-  def _augment_with_node_id(self, emb: torch.Tensor, node_ids: np.ndarray | torch.Tensor) -> torch.Tensor:
-     if self.node_id_embedding is None:
-        return emb
-     if isinstance(node_ids, np.ndarray):
-        node_ids_t = torch.from_numpy(node_ids).long().to(self.device)
-     else:
-        node_ids_t = node_ids.long().to(self.device)
-      
-     id_emb = self.node_id_embedding(node_ids_t)
-     merged = torch.cat([emb,id_emb],dim=1)
 
-     return self.node_id_merger(merged)
 
 
   def compute_temporal_embeddings(self, source_nodes, destination_nodes, edge_times, edge_idxs, n_neighbors=20):
@@ -235,9 +187,6 @@ class TGN(torch.nn.Module):
         if self.dyrep:
           source_node_embedding = memory[source_nodes]
           destination_node_embedding = memory[destination_nodes]
-        # add learnable node-id signal (per occurrence) to reduce cold-start collapse
-        source_node_embedding = self._augment_with_node_id(source_node_embedding, source_nodes)
-        destination_node_embedding = self._augment_with_node_id(destination_node_embedding, destination_nodes)
       return source_node_embedding, destination_node_embedding
 
   def compute_community_prob(self, source_nodes, destination_nodes, edge_times, edge_idxs, n_neighbors=20):

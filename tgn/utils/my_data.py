@@ -14,10 +14,10 @@ class Data:
     self.n_unique_nodes = len(self.unique_nodes)
 
 
-def get_data(dataset_name,
+def get_data(dataset_name, filepath,
              node_embedding_method):
   DEFAULT_DIM = 16
-  graph_df = pd.read_csv('./data/{}.csv'.format(dataset_name))
+  graph_df = pd.read_csv(filepath.format(dataset_name))
 
   sources = graph_df.source.values
   destinations = graph_df.destination.values
@@ -33,7 +33,7 @@ def get_data(dataset_name,
       print(f"Loading edge features: {edge_feat_path}")
       edge_features = np.load(edge_feat_path)
   else:
-      print(f"cannot find ({edge_feat_path}), use zero-vector (dim={DEFAULT_DIM})...")
+      print(f"cannot find ({edge_feat_path}), use zero-vector for edge feat (dim={DEFAULT_DIM})...")
       edge_features = np.zeros((num_edges, DEFAULT_DIM), dtype=np.float32)
 
   node_feat_path = './data/{}_node.npy'.format(dataset_name)
@@ -43,14 +43,14 @@ def get_data(dataset_name,
   else:
     if node_embedding_method == "all-zero":
       print(f"cannot find node feature: {node_feat_path}), use zero vector(dim={DEFAULT_DIM})...")
-      print("Use all-zero init. ")
+      print("Use all-zero init for node embedding. ")
       node_features = np.zeros((num_nodes, DEFAULT_DIM), dtype=np.float32)
     elif node_embedding_method == "random":
-       print("Use random init. ")
+       print("Use random init for node embedding. ")
        rng = np.random.default_rng(42)
        node_features = rng.standard_normal((num_nodes, DEFAULT_DIM).astype(np.float32))
     elif node_embedding_method == "one-hot":
-       print("Use one-hot init. ")
+       print("Use one-hot init for node embedding. ")
        node_features = np.eye(num_nodes, dtype=np.float32)  
     else:
       raise ValueError(

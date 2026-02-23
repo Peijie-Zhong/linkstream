@@ -19,8 +19,7 @@ class SequenceMemoryUpdater(MemoryUpdater):
     if len(unique_node_ids) <= 0:
       return
 
-    assert (self.memory.get_last_update(unique_node_ids) <= timestamps).all().item(), "Trying to " \
-                                                                                     "update memory to time in the past"
+    assert (self.memory.get_last_update(unique_node_ids) <= timestamps).all().item(), "Trying to update memory to time in the past"
 
     memory = self.memory.get_memory(unique_node_ids)
     self.memory.last_update[unique_node_ids] = timestamps
@@ -33,8 +32,13 @@ class SequenceMemoryUpdater(MemoryUpdater):
     if len(unique_node_ids) <= 0:
       return self.memory.memory.data.clone(), self.memory.last_update.data.clone()
 
-    assert (self.memory.get_last_update(unique_node_ids) <= timestamps).all().item(), "Trying to " \
-                                                                                     "update memory to time in the past"
+    last = self.memory.get_last_update(unique_node_ids)
+    bad = (last > timestamps)
+    if bad.any():
+        i = bad.nonzero(as_tuple=False)[0].item()
+        uid = unique_node_ids[i].item() if hasattr(unique_node_ids[i], "item") else unique_node_ids[i]
+        print("BAD uid:", uid, "last_update:", last[i].item(), "new_ts:", timestamps[i].item())
+    assert (self.memory.get_last_update(unique_node_ids) <= timestamps).all().item(), "Trying to update memory to time in the past"
 
     updated_memory = self.memory.memory.data.clone()
     updated_memory[unique_node_ids] = self.memory_updater(unique_messages, updated_memory[unique_node_ids])

@@ -24,21 +24,17 @@ class EmbeddingModule(nn.Module):
     self.embedding_dimension = embedding_dimension
     self.device = device
 
-  def compute_embedding(self, memory, source_nodes, timestamps, n_layers, n_neighbors=20, time_diffs=None,
-                        use_time_proj=True):
+  def compute_embedding(self, memory, source_nodes, timestamps, n_layers, n_neighbors=20, time_diffs=None, use_time_proj=True):
     return NotImplemented
 
 
 class IdentityEmbedding(EmbeddingModule):
-  def compute_embedding(self, memory, source_nodes, timestamps, n_layers, n_neighbors=20, time_diffs=None,
-                        use_time_proj=True):
+  def compute_embedding(self, memory, source_nodes, timestamps, n_layers, n_neighbors=20, time_diffs=None, use_time_proj=True):
     return memory[source_nodes, :]
 
 
 class TimeEmbedding(EmbeddingModule):
-  def __init__(self, node_features, edge_features, memory, neighbor_finder, time_encoder, n_layers,
-               n_node_features, n_edge_features, n_time_features, embedding_dimension, device,
-               n_heads=2, dropout=0.1, use_memory=True, n_neighbors=1):
+  def __init__(self, node_features, edge_features, memory, neighbor_finder, time_encoder, n_layers, n_node_features, n_edge_features, n_time_features, embedding_dimension, device, n_heads=2, dropout=0.1, use_memory=True, n_neighbors=1):
     super(TimeEmbedding, self).__init__(node_features, edge_features, memory,
                                         neighbor_finder, time_encoder, n_layers,
                                         n_node_features, n_edge_features, n_time_features,
@@ -54,17 +50,14 @@ class TimeEmbedding(EmbeddingModule):
 
     self.embedding_layer = NormalLinear(1, self.n_node_features)
 
-  def compute_embedding(self, memory, source_nodes, timestamps, n_layers, n_neighbors=20, time_diffs=None,
-                        use_time_proj=True):
+  def compute_embedding(self, memory, source_nodes, timestamps, n_layers, n_neighbors=20, time_diffs=None, use_time_proj=True):
     source_embeddings = memory[source_nodes, :] * (1 + self.embedding_layer(time_diffs.unsqueeze(1)))
 
     return source_embeddings
 
 
 class GraphEmbedding(EmbeddingModule):
-  def __init__(self, node_features, edge_features, memory, neighbor_finder, time_encoder, n_layers,
-               n_node_features, n_edge_features, n_time_features, embedding_dimension, device,
-               n_heads=2, dropout=0.1, use_memory=True):
+  def __init__(self, node_features, edge_features, memory, neighbor_finder, time_encoder, n_layers, n_node_features, n_edge_features, n_time_features, embedding_dimension, device, n_heads=2, dropout=0.1, use_memory=True):
     super(GraphEmbedding, self).__init__(node_features, edge_features, memory,
                                          neighbor_finder, time_encoder, n_layers,
                                          n_node_features, n_edge_features, n_time_features,
@@ -105,8 +98,8 @@ class GraphEmbedding(EmbeddingModule):
                                                            timestamps,
                                                            n_layers=n_layers - 1,
                                                            n_neighbors=n_neighbors)
-
-      neighbors, edge_idxs, edge_times = self.neighbor_finder.get_temporal_neighbor(
+      
+      neighbors, edge_idxs, edge_times = self.neighbor_finder.get_temporal_neighbor_near(
         source_nodes,
         timestamps,
         n_neighbors=n_neighbors)
@@ -132,9 +125,7 @@ class GraphEmbedding(EmbeddingModule):
 
       edge_features = self.edge_features[edge_idxs, :]
 
-
-
-      mask = neighbors_torch == -1  # Peijie edit
+      mask = neighbors_torch == -1 # Peijie change
 
       source_embedding = self.aggregate(n_layers, source_node_conv_embeddings,
                                         source_nodes_time_embedding,
@@ -228,10 +219,7 @@ class GraphAttentionEmbedding(GraphEmbedding):
 
 
 def get_embedding_module(module_type, node_features, edge_features, memory, neighbor_finder,
-                         time_encoder, n_layers, n_node_features, n_edge_features, n_time_features,
-                         embedding_dimension, device,
-                         n_heads=2, dropout=0.1, n_neighbors=None,
-                         use_memory=True):
+                         time_encoder, n_layers, n_node_features, n_edge_features, n_time_features, embedding_dimension, device, n_heads=2, dropout=0.1, n_neighbors=None, use_memory=True):
   if module_type == "graph_attention":
     return GraphAttentionEmbedding(node_features=node_features,
                                     edge_features=edge_features,

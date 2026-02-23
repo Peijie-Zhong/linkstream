@@ -131,6 +131,17 @@ class NeighborFinder:
     i = np.searchsorted(self.node_to_edge_timestamps[src_idx], cut_time)
 
     return self.node_to_neighbors[src_idx][:i], self.node_to_edge_idxs[src_idx][:i], self.node_to_edge_timestamps[src_idx][:i]
+  
+  def find_near(self, src_idx, cut_time):
+    """
+    Extracts all the interactions happening near cut_time for user src_idx in the overall interaction graph. The returned interactions are sorted by time.
+
+    Returns 3 lists: neighbors, edge_idxs, timestamps
+
+    """
+    i = np.searchsorted(self.node_to_edge_timestamps[src_idx], cut_time)
+
+    return self.node_to_neighbors[src_idx][:i], self.node_to_edge_idxs[src_idx][:i], self.node_to_edge_timestamps[src_idx][:i]
 
   def get_temporal_neighbor(self, source_nodes, timestamps, n_neighbors=20):
     """
@@ -159,6 +170,61 @@ class NeighborFinder:
       if len(source_neighbors) > 0 and n_neighbors > 0:
         if self.uniform:  # if we are applying uniform sampling, shuffles the data above before sampling
           sampled_idx = np.random.randint(0, len(source_neighbors), n_neighbors)
+
+          neighbors[i, :] = source_neighbors[sampled_idx]
+          edge_times[i, :] = source_edge_times[sampled_idx]
+          edge_idxs[i, :] = source_edge_idxs[sampled_idx]
+
+          # re-sort based on time
+          pos = edge_times[i, :].argsort()
+          neighbors[i, :] = neighbors[i, :][pos]
+          edge_times[i, :] = edge_times[i, :][pos]
+          edge_idxs[i, :] = edge_idxs[i, :][pos]
+        else:
+          # Take most recent interactions
+          source_edge_times = source_edge_times[-n_neighbors:]
+          source_neighbors = source_neighbors[-n_neighbors:]
+          source_edge_idxs = source_edge_idxs[-n_neighbors:]
+
+          assert (len(source_neighbors) <= n_neighbors)
+          assert (len(source_edge_times) <= n_neighbors)
+          assert (len(source_edge_idxs) <= n_neighbors)
+
+          neighbors[i, n_neighbors - len(source_neighbors):] = source_neighbors
+          edge_times[i, n_neighbors - len(source_edge_times):] = source_edge_times
+          edge_idxs[i, n_neighbors - len(source_edge_idxs):] = source_edge_idxs
+
+    return neighbors, edge_idxs, edge_times
+  
+
+  def get_temporal_neighbor_near(self, source_nodes, timestamps, n_neighbors=20):
+    """
+    Given a list of users ids and relative cut times, extracts a sampled temporal neighborhood of each user in the list.
+
+    Params
+    ------
+    src_idx_l: List[int]
+    cut_time_l: List[float],
+    num_neighbors: int
+    """
+    assert (len(source_nodes) == len(timestamps))
+
+    tmp_n_neighbors = n_neighbors if n_neighbors > 0 else 1
+
+    neighbors = np.full((len(source_nodes), tmp_n_neighbors), -1, dtype=np.int32)
+    edge_idxs = np.full((len(source_nodes), tmp_n_neighbors), -1, dtype=np.int32)
+    edge_times = np.zeros((len(source_nodes), tmp_n_neighbors), dtype=np.float32)
+
+
+    for i, (source_node, timestamp) in enumerate(zip(source_nodes, timestamps)):
+      source_neighbors, source_edge_idxs, source_edge_times = self.find_near(source_node, 3000)  # extracts all neighbors, interactions indexes and timestamps of all interactions of user source_node happening before cut_time
+
+      if len(source_neighbors) > 0 and n_neighbors > 0:
+        if self.uniform:  # if we are applying uniform sampling, shuffles the data above before sampling
+          if hasattr(self, 'random_state'):
+            sampled_idx = self.random_state.randint(0, len(source_neighbors), n_neighbors)
+          else:
+            sampled_idx = np.random.randint(0, len(source_neighbors), n_neighbors)
 
           neighbors[i, :] = source_neighbors[sampled_idx]
           edge_times[i, :] = source_edge_times[sampled_idx]
