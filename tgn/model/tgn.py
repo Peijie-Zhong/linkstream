@@ -143,8 +143,7 @@ class TGN(torch.nn.Module):
         negative_nodes].long()
       negative_time_diffs = (negative_time_diffs - self.mean_time_shift_dst) / self.std_time_shift_dst
 
-      time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs],
-                             dim=0)
+      time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs], dim=0)
 
     # Compute the embeddings using the embedding module
     node_embedding = self.embedding_module.compute_embedding(memory=memory,
@@ -176,10 +175,10 @@ class TGN(torch.nn.Module):
                                                                     destination_node_embedding,
                                                                     edge_times, edge_idxs)
       unique_destinations, destination_id_to_messages = self.get_raw_messages(destination_nodes,
-                                                                              destination_node_embedding,
-                                                                              source_nodes,
-                                                                              source_node_embedding,
-                                                                              edge_times, edge_idxs)
+                            destination_node_embedding,
+                            source_nodes,
+                            source_node_embedding,
+                            edge_times, edge_idxs)
       if self.memory_update_at_start:
         self.memory.store_raw_messages(unique_sources, source_id_to_messages)
         self.memory.store_raw_messages(unique_destinations, destination_id_to_messages)
@@ -194,8 +193,7 @@ class TGN(torch.nn.Module):
 
     return source_node_embedding, destination_node_embedding, negative_node_embedding
 
-  def compute_edge_probabilities(self, source_nodes, destination_nodes, negative_nodes, edge_times,
-                                 edge_idxs, n_neighbors=20):
+  def compute_edge_probabilities(self, source_nodes, destination_nodes, negative_nodes, edge_times, edge_idxs, n_neighbors=20):
     """
     Compute probabilities for edges between sources and destination and between sources and
     negatives by first computing temporal embeddings using the TGN encoder and then feeding them
@@ -245,8 +243,8 @@ class TGN(torch.nn.Module):
       unique_messages = self.message_function.compute_message(unique_messages)
 
     updated_memory, updated_last_update = self.memory_updater.get_updated_memory(unique_nodes,
-                                                                                 unique_messages,
-                                                                                 timestamps=unique_timestamps)
+                                          unique_messages,
+                                          timestamps=unique_timestamps)
 
     return updated_memory, updated_last_update
 

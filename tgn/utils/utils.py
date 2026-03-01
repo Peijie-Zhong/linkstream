@@ -79,7 +79,6 @@ class RandEdgeSampler(object):
       src_index = np.random.randint(0, len(self.src_list), size)
       dst_index = np.random.randint(0, len(self.dst_list), size)
     else:
-
       src_index = self.random_state.randint(0, len(self.src_list), size)
       dst_index = self.random_state.randint(0, len(self.dst_list), size)
     return self.src_list[src_index], self.dst_list[dst_index]
@@ -88,15 +87,47 @@ class RandEdgeSampler(object):
     self.random_state = np.random.RandomState(self.seed)
 
 
+import numpy as np
+
+class NegativeNodeSampler:
+    def __init__(self, all_nodes, seed=0, use_seen_pool=True):
+        self.all_nodes = np.unique(np.asarray(all_nodes, dtype=np.int64))
+        self.rng = np.random.RandomState(seed)
+        self.use_seen_pool = bool(use_seen_pool)
+        self.seen = set()
+
+    def update_seen(self, src, dst):
+        # call after processing a batch
+        for x in np.asarray(src, dtype=np.int64).tolist():
+            self.seen.add(int(x))
+        for x in np.asarray(dst, dtype=np.int64).tolist():
+            self.seen.add(int(x))
+
+    def sample(self, B, R):
+        """
+        Returns neg_nodes: np.ndarray [B,R] int64
+        """
+        B = int(B); R = int(R)
+        if B <= 0 or R <= 0:
+            return np.empty((0, 0), dtype=np.int64)
+
+        if self.use_seen_pool and len(self.seen) > 0:
+            pool = np.fromiter(self.seen, dtype=np.int64)
+        else:
+            pool = self.all_nodes
+
+        neg = self.rng.choice(pool, size=B * R, replace=True).astype(np.int64)
+        return neg.reshape(B, R)
+
+
 def get_neighbor_finder(data, uniform, max_node_idx=None):
   max_node_idx = max(data.sources.max(), data.destinations.max()) if max_node_idx is None else max_node_idx
   adj_list = [[] for _ in range(max_node_idx + 1)]
-  for source, destination, edge_idx, timestamp in zip(data.sources,
-                                                      data.destinations,
-                                                      data.edge_idxs,
-                                                      data.timestamps):
-    adj_list[source].append((destination, edge_idx, timestamp))
-    adj_list[destination].append((source, edge_idx, timestamp))
+  for source, destination, timestamp in zip(data.sources,
+                                              data.destinations,
+                                              data.timestamps):
+    adj_list[source].append((destination, timestamp))
+    adj_list[destination].append((source, timestamp))
 
   return NeighborFinder(adj_list, uniform=uniform)
 
@@ -207,7 +238,7 @@ class NeighborFinder:
     cut_time_l: List[float],
     num_neighbors: int
     """
-    assert (len(source_nodes) == len(timestamps))
+    assert (len(source_nodes) == len(timestamps)), "source node length neq timestamps."
 
     tmp_n_neighbors = n_neighbors if n_neighbors > 0 else 1
 
@@ -217,7 +248,7 @@ class NeighborFinder:
 
 
     for i, (source_node, timestamp) in enumerate(zip(source_nodes, timestamps)):
-      source_neighbors, source_edge_idxs, source_edge_times = self.find_near(source_node, 3000)  # extracts all neighbors, interactions indexes and timestamps of all interactions of user source_node happening before cut_time
+      source_neighbors, source_edge_idxs, source_edge_times = self.find_near(source_node, timestamp)  # extracts all neighbors, interactions indexes and timestamps of all interactions of user source_node happening before cut_time
 
       if len(source_neighbors) > 0 and n_neighbors > 0:
         if self.uniform:  # if we are applying uniform sampling, shuffles the data above before sampling

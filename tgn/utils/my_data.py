@@ -4,18 +4,19 @@ import pandas as pd
 import os
 
 class Data:
-  def __init__(self, sources, destinations, timestamps, edge_idxs):
+  def __init__(self, sources, destinations, timestamps, edge_idxs, timestamp_norm):
     self.sources = sources
     self.destinations = destinations
     self.timestamps = timestamps
     self.edge_idxs = edge_idxs
+    self.timestamp_norm = timestamp_norm
+    
     self.n_interactions = len(sources)
     self.unique_nodes = set(sources) | set(destinations)
     self.n_unique_nodes = len(self.unique_nodes)
 
 
-def get_data(dataset_name, filepath,
-             node_embedding_method):
+def get_data(dataset_name, filepath, node_embedding_method):
   DEFAULT_DIM = 16
   graph_df = pd.read_csv(filepath.format(dataset_name))
 
@@ -23,6 +24,7 @@ def get_data(dataset_name, filepath,
   destinations = graph_df.destination.values
   edge_idxs = graph_df.idx.values
   timestamps = graph_df.timestamp.values
+  timestamp_norm = graph_df.timestamp_norm.values
 
   max_node_idx = max(sources.max(), destinations.max())
   num_nodes = max_node_idx + 1
@@ -59,7 +61,7 @@ def get_data(dataset_name, filepath,
       )
     
 
-  full_data = Data(sources, destinations, timestamps, edge_idxs)
+  full_data = Data(sources, destinations, timestamps, edge_idxs, timestamp_norm)
 
   print("The dataset has {} interactions, involving {} different nodes".format(full_data.n_interactions,full_data.n_unique_nodes))
   return node_features, edge_features, full_data

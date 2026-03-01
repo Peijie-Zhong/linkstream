@@ -124,8 +124,7 @@ full_ngh_finder = get_neighbor_finder(full_data, args.uniform)
 # NB: in the inductive setting, negatives are sampled only amongst other new nodes
 train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
 val_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=0)
-nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations,
-                                      seed=1)
+nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations, seed=1)
 test_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=2)
 nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources,
                                        new_node_test_data.destinations,
@@ -217,8 +216,7 @@ for i in range(args.n_runs):
           neg_label = torch.zeros(size, dtype=torch.float, device=device)
 
         tgn = tgn.train()
-        pos_prob, neg_prob = tgn.compute_edge_probabilities(sources_batch, destinations_batch, negatives_batch,
-                                                            timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
+        pos_prob, neg_prob = tgn.compute_edge_probabilities(sources_batch, destinations_batch, negatives_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
 
         loss += criterion(pos_prob.squeeze(), pos_label) + criterion(neg_prob.squeeze(), neg_label)
 

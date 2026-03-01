@@ -9,123 +9,162 @@ def longitudinal_modularity_loss(
     csc_norm="l2",
     null_weight=1.0,
     csc_weight=1.0,
-    collapse_weight=1.0,
-    neg_weight=0.3,        # <<< 新增：负采样损失权重
-    neg_samples=10,        # <<< 新增：每条边采多少个负样本
-    neg_max_tries=5,       # <<< 新增：拒绝采样最大重采次数
+    collapse_weight=1.0
 ):
     device = p_src.device
     B = p_src.size(0)
     K = int(p_src.size(1))
 
-    # -------- time factor per endpoint --------
-    Tu_src = node_lifespan[src].to(device=device, dtype=p_src.dtype)
-    Tu_dst = node_lifespan[dst].to(device=device, dtype=p_src.dtype)
-    alpha_src = (delta_src.to(p_src.dtype) / (Tu_src + 1.0))
-    alpha_dst = (delta_dst.to(p_dst.dtype) / (Tu_dst + 1.0))
+    # -------------------------
+    # 1) soft longitudinal modularity (batch as a small link stream)
+    #    Observed term: sum_i <p_src[i], p_dst[i]>
+    #    Expected term (user-specified):
+    #      sum_c sum_{u,v} (k_u k_v)/(2m) * (sqrt(T_u^c T_v^c))/T
+    #    where T_u^c is accumulated from time-varying p using delta_src/dst.
+    # -------------------------
 
-    # -------- batch degree (within-batch) --------
-    all_nodes = torch.cat([src, dst], dim=0)  # [2B]
-    uniq_nodes, inv_all = torch.unique(all_nodes, return_inverse=True)
-    inv_src = inv_all[:B]                      # [B]
-    inv_dst = inv_all[B:]                      # [B]
+    # Observed (events) term
+    obs_term = (p_src * p_dst).sum(dim=1).mean()
 
-    deg_uniq = torch.bincount(inv_all, minlength=uniq_nodes.numel()).to(device=device, dtype=p_src.dtype)
-    k_src = deg_uniq[inv_src]                  # [B]
-    k_dst = deg_uniq[inv_dst]                  # [B]
-    two_m_b = deg_uniq.sum()                   # == 2*m_b == 2B (无向、每交互一条边)
+    # Build per-node time-in-community T_u^c within this batch using deltas
+    # occurrences: src at t contributes p_src * delta_src; dst contributes p_dst * delta_dst
+    nodes_all = torch.cat([src, dst], dim=0).to(device=device)
+    P_all = torch.cat([p_src, p_dst], dim=0)  # [2B, K]
+    dt_all = torch.cat([delta_src, delta_dst], dim=0).to(dtype=p_src.dtype)  # [2B]
 
-    # -------- modularity pieces (你当前版本的 A - E) --------
-    # A: observed similarity on edges
-    sim_e = (p_src * p_dst).sum(dim=1)         # [B]
-    A = sim_e.mean()
+    # Guard against non-positive deltas (should not happen; keep stable)
+    dt_all = torch.clamp(dt_all, min=0.0)
 
-    # E: stub-level implicit all-pairs (time factor enters via sqrt(alpha))
-    p_stub = torch.cat([p_src, p_dst], dim=0)                  # [2B, K]
-    alpha_stub = torch.cat([alpha_src, alpha_dst], dim=0)      # [2B]
-    w_stub = torch.sqrt(torch.clamp(alpha_stub, min=0.0) + 1e-12).unsqueeze(1)  # [2B,1]
-    s_c = (w_stub * p_stub).sum(dim=0)                         # [K]
+    # T_contrib[o, c] = p(o,c) * dt(o)
+    T_contrib = P_all * dt_all[:, None]  # [2B, K]
 
-    # 这里给一个更稳定的尺度：E1 = (Σ s_c^2) / (2m)  是 O(B)；再除一次 (2m) 让它变 O(1) 跟 A 对齐
-    E = (s_c.pow(2).sum()) / (two_m_b + 1e-12)
-    E = E / (two_m_b + 1e-12)
+    # unique nodes in this batch
+    uniq_nodes, inv = torch.unique(nodes_all, return_inverse=True)
+    U = int(uniq_nodes.numel())
 
-    Q = A - E
-    print("E:", E)
-    print("A:", A)
+    # Accumulate T_u^c  (U x K)
+    T_u = torch.zeros((U, K), device=device, dtype=p_src.dtype)
+    T_u.index_add_(0, inv, T_contrib)
+
+    # Also accumulate total observed duration per node (for collapse regularization)
+    dur_u = torch.zeros((U,), device=device, dtype=p_src.dtype)
+    dur_u.index_add_(0, inv, dt_all)
+
+    # Convert global_degree (python list/np array) -> tensor for uniq nodes
+    # NOTE: global_degree is assumed to be indexable by raw node id.
+    k_u = p_src.new_tensor([float(global_degree[int(u.item())]) for u in uniq_nodes])
+
+    # Expected term in closed form:
+    #   (1 / ((2m) * T)) * sum_c (sum_u k_u * sqrt(T_u^c))^2
+    # Here we use total_duration from args as T.
+    T_denom = float(total_duration) if float(total_duration) > 0 else 1.0
+
+    sqrt_T_u = torch.sqrt(T_u)
+    #S_c = (k_u[:, None] * sqrt_T_u).sum(dim=0)
+    S_c = (k_u[:, None] * T_u).sum(dim=0)
+    print("Sc:", S_c)
+    exp_term = (S_c * S_c).sum() / (2.0 * float(m) * T_denom**2)
+
+    exp_term = exp_term / (2*B)
+    print("obs:", obs_term)
+    print("exp_term:", exp_term)
+    Q = obs_term - exp_term
     loss_modularity = -Q
 
-    # -------- collapse regularization (same as yours) --------
-    P_occ = torch.cat([p_src, p_dst], dim=0)   # [2B, K]
-    M_occ = P_occ.size(0)
-    counts = P_occ.sum(dim=0)
-    loss_collapse = (math.sqrt(K) / float(M_occ)) * torch.norm(counts, p=2) - 1.0
-    loss_collapse = torch.clamp(loss_collapse, min=0.0)
-    print("collapse:", loss_collapse)
+    # For collapse regularization downstream, define a node-level soft assignment for this batch:
+    # time-weighted average p_u = (sum_occ p*dt) / (sum_occ dt)
+    P_node = T_u / (dur_u[:, None] + 1e-12)  # [U, K]
+    P_occ = P_node
+    M_occ = U
 
-    # =========================
-    #   Negative sampling loss
-    # =========================
-    # 目标：对 batch 内“无边对”施加惩罚，推开它们的社区相似度 sim(u,v)
-    loss_neg = torch.zeros((), device=device, dtype=p_src.dtype)
+    # -------------------------
+    # 2) CSC temporal smoothness
+    # -------------------------
+    """
+    p_prev_det = p_prev.detach()
+    temp_prev: Dict[int, torch.Tensor] = {}
+    csc_terms = []
 
-    if neg_weight > 0.0 and neg_samples > 0 and uniq_nodes.numel() > 1:
-        U = uniq_nodes.numel()
+    def _csc_distance(cur, prev):
+        if csc_norm == "l2":
+            return torch.norm(cur - prev, p=2)
+        elif csc_norm == "l1":
+            return torch.norm(cur - prev, p=1)
+        else:
+            raise ValueError(f"Unsupported norm type: {csc_norm}")
 
-        # (1) 先构造 node-level 平均概率 p_node[uidx]，用于负样本节点的 p
-        p_sum = torch.zeros(U, K, device=device, dtype=p_src.dtype)
-        cnt = torch.zeros(U, device=device, dtype=p_src.dtype)
-        p_sum.index_add_(0, inv_all, p_stub)  # inv_all: [2B], p_stub: [2B,K]
-        cnt.index_add_(0, inv_all, torch.ones_like(inv_all, dtype=p_src.dtype))
-        p_node = p_sum / (cnt.unsqueeze(1) + 1e-12)  # [U,K]
+    for i in range(B):
+        u = int(src[i].item())
+        cur_u = p_src[i]
+        prev_u = temp_prev.get(u, p_prev_det[u])
+        csc_terms.append(_csc_distance(cur_u, prev_u))
+        temp_prev[u] = cur_u
 
-        # (2) hash batch 内真实边，避免采到真实边（无向：双向都存）
-        edge_hash = torch.cat([
-            inv_src * U + inv_dst,
-            inv_dst * U + inv_src,
-        ], dim=0)
-        edge_hash = torch.unique(edge_hash)
+        v = int(dst[i].item())
+        cur_v = p_dst[i]
+        prev_v = temp_prev.get(v, p_prev_det[v])
+        csc_terms.append(_csc_distance(cur_v, prev_v))
+        temp_prev[v] = cur_v
 
-        # (3) 为每条边采 neg_samples 个候选负节点（index in [0,U)）
-        cand = torch.randint(0, U, (B, neg_samples), device=device)
+    loss_csc = (
+        torch.stack(csc_terms).mean()
+        if len(csc_terms) > 0
+        else torch.zeros((), device=device, dtype=p_src.dtype)
+    )
+    """
 
-        # (4) 拒绝采样：避开 self / 真邻居 / batch 内真实边
-        for _ in range(int(neg_max_tries)):
-            bad_self_src = cand.eq(inv_src.unsqueeze(1)) | cand.eq(inv_dst.unsqueeze(1))
-            bad_self_dst = cand.eq(inv_dst.unsqueeze(1)) | cand.eq(inv_src.unsqueeze(1))
+    # -----------------------------------------
+    # 3) collapse regularization
+    # -----------------------------------------
+    # DMoN 里是: (sqrt(K)/n) * || C^T 1 ||_F - 1
+    # 这里用 batch-node-level 的 soft assignment P_occ (U x K)
+    # counts[k] = sum_u P_occ[u,k]
+    # 坍缩到单一簇 => counts 的 L2 范数最大（=U）；均匀分配 => 更小
+    if P_occ is None:
+        loss_collapse = torch.zeros((), device=device, dtype=p_src.dtype)
+    else:
+        counts = P_occ.sum(dim=0)  # [K]
+        loss_collapse = (math.sqrt(K) / float(M_occ)) * torch.norm(counts, p=2) - 1.0
+        loss_collapse = torch.clamp(loss_collapse, min=0.0)
 
-            h_src = inv_src.unsqueeze(1) * U + cand
-            h_dst = inv_dst.unsqueeze(1) * U + cand
-
-            bad_edge_src = torch.isin(h_src, edge_hash)
-            bad_edge_dst = torch.isin(h_dst, edge_hash)
-
-            bad = bad_self_src | bad_self_dst | bad_edge_src | bad_edge_dst
-            if not bad.any():
-                break
-            cand = torch.where(
-                bad,
-                torch.randint(0, U, cand.shape, device=device),
-                cand
-            )
-
-        # (5) 计算负相似度：用端点的 occurrence-level p 与负节点的 node-level 平均 p
-        p_cand = p_node[cand]  # [B, neg_samples, K]
-
-        sim_neg_src = (p_src.unsqueeze(1) * p_cand).sum(dim=-1)  # [B, neg_samples]
-        sim_neg_dst = (p_dst.unsqueeze(1) * p_cand).sum(dim=-1)  # [B, neg_samples]
-
-        loss_neg = 0.5 * (sim_neg_src.mean() + sim_neg_dst.mean())
-        print("neg:", loss_neg)
-
-    # -------- total loss --------
+    # -------------------------
+    # total loss
+    # -------------------------
     loss = (
         null_weight * loss_modularity
+        # + csc_weight * loss_csc
         + collapse_weight * loss_collapse
-        + neg_weight * loss_neg
     )
-    return loss
-    """
+
+    terms_raw = {
+        "modularity": loss_modularity,
+        # "csc": loss_csc,
+        "collapse": loss_collapse,
+    }
+    loss_components = torch.stack([
+        loss_modularity.detach(),
+        # loss_csc.detach(),
+        loss_collapse.detach(),
+    ])
+
+    return loss, loss_components, terms_raw
+
+
+"""
+
+import torch
+from typing import Dict
+import math
+
+
+def longitudinal_modularity_loss(
+    p_src, p_dst, src, dst, node_lifespan, global_degree, m, total_duration,
+    p_prev, delta_src, delta_dst,
+    csc_norm="l2",
+    null_weight=1.0,
+    csc_weight=1.0,
+    collapse_weight=1.0
+):
     device = p_src.device
     B = p_src.size(0)
     K = int(p_src.size(1))
@@ -142,8 +181,9 @@ def longitudinal_modularity_loss(
         ku = float(global_degree[u])
         Tu = float(node_lifespan[u])
 
-        alpha = float(dtv.item() / (Tu+1))
+        alpha = float(math.sqrt(dtv.item() / (Tu+1)))
         p_o = p_u
+
         s_o = ku * alpha
 
         idx = len(P_list)
@@ -174,14 +214,14 @@ def longitudinal_modularity_loss(
         for (a, b) in edge_occ_pairs:
             A_occ[a, b] = A_occ[a, b] + 1.0
             A_occ[b, a] = A_occ[b, a] + 1.0
-        E_occ = (S_occ[:, None] * S_occ[None, :]) / S_occ.sum()
-
+        #E_occ = (S_occ[:, None] * S_occ[None, :]) / S_occ.sum()
+        E_occ = (S_occ[:, None] * S_occ[None, :]) / (2 * m)
         # remove diagonal
         A_occ = A_occ - torch.diag(torch.diag(A_occ))
         E_occ = E_occ - torch.diag(torch.diag(E_occ))
         Sim = Sim - torch.diag(torch.diag(Sim))
 
-        Q = ((A_occ - E_occ) * Sim).sum() / (2*B)
+        Q = ((A_occ - E_occ) * Sim).sum() / (2 * B)
         print(((A_occ) * Sim).sum() / (2 * B))
         print((E_occ * Sim).sum() / (2 * B))
 
@@ -259,4 +299,5 @@ def longitudinal_modularity_loss(
     ])
 
     return loss, loss_components, terms_raw
+
 """

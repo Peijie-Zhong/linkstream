@@ -37,8 +37,7 @@ class TGN(torch.nn.Module):
                memory_update_at_start=True, message_dimension=100,
                memory_dimension=500, embedding_module_type="graph_attention",
                message_function="mlp",
-               mean_time_shift=0, std_time_shift=1, mean_time_shift_dst=0, 
-               std_time_shift_dst=1, n_neighbors=None, aggregator_type="last",
+               mean_time_shift=0, std_time_shift=1, n_neighbors=None, aggregator_type="last",
                memory_updater_type="gru",
                use_destination_embedding_in_message=False,
                use_source_embedding_in_message=False,
@@ -124,29 +123,90 @@ class TGN(torch.nn.Module):
                                                   dropout=dropout)
 
 
+  def compute_temporal_embeddings(
+      self,
+      source_nodes,
+      destination_nodes,
+      negative_nodes,
+      edge_times,
+      edge_idxs,
+      n_neighbors=20
+  ):
+      """
+      Supports:
+        - negative_nodes shape [B]  OR  [B, R]
+      Returns:
+        - source_node_embedding: [B, D]
+        - destination_node_embedding: [B, D]
+        - negative_node_embedding: [B, D] or [B, R, D] (same layout as negative_nodes)
+      """
+      # ---------- to numpy ----------
+      source_nodes = np.asarray(source_nodes, dtype=np.int64)
+      destination_nodes = np.asarray(destination_nodes, dtype=np.int64)
+      edge_times = np.asarray(edge_times, dtype=np.float64)
+      edge_idxs = np.asarray(edge_idxs, dtype=np.int64)
 
-  def compute_temporal_embeddings(self, source_nodes, destination_nodes, edge_times, edge_idxs, n_neighbors=20):
-      n_samples = len(source_nodes)
-      nodes = np.concatenate([source_nodes, destination_nodes])
-      timestamps = np.concatenate([edge_times, edge_times])
+      B = len(source_nodes)
+      assert len(destination_nodes) == B
+      assert len(edge_times) == B
+      assert len(edge_idxs) == B
+
+      # ---------- handle negative_nodes shape ----------
+      neg_np = np.asarray(negative_nodes, dtype=np.int64)
+      if neg_np.ndim == 1:
+          # [B]
+          assert len(neg_np) == B
+          R = 1
+          neg_flat = neg_np
+          neg_timestamps = edge_times  # [B]
+      elif neg_np.ndim == 2:
+          # [B, R]
+          assert neg_np.shape[0] == B
+          R = int(neg_np.shape[1])
+          neg_flat = neg_np.reshape(-1)                         # [B*R]
+          neg_timestamps = np.repeat(edge_times, R)             # [B*R], each neg uses its edge time
+      else:
+          raise ValueError(f"negative_nodes must be 1D or 2D, got shape={neg_np.shape}")
+
+      # concatenate nodes & timestamps for embedding_module
+      nodes = np.concatenate([source_nodes, destination_nodes, neg_flat], axis=0)
+      timestamps = np.concatenate([edge_times, edge_times, neg_timestamps], axis=0)
 
       memory = None
       time_diffs = None
 
       if self.use_memory:
-        if self.memory_update_at_start:
-          memory, last_update = self.get_updated_memory(list(range(self.n_nodes)),
-                                                        self.memory.messages)
-        else:
-          memory = self.memory.get_memory(list(range(self.n_nodes)))
-          last_update = self.memory.last_update
+          if self.memory_update_at_start:
+              memory, last_update = self.get_updated_memory(list(range(self.n_nodes)),
+                                                            self.memory.messages)
+          else:
+              memory = self.memory.get_memory(list(range(self.n_nodes)))
+              last_update = self.memory.last_update
 
-        source_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[source_nodes].long()
-        source_time_diffs = ((source_time_diffs - self.mean_time_shift) / self.std_time_shift)
-        destination_time_diffs = torch.LongTensor(edge_times).to(self.device) - last_update[destination_nodes].long()
-        destination_time_diffs = ((destination_time_diffs - self.mean_time_shift) / self.std_time_shift)
+          edge_times_t = torch.as_tensor(edge_times, dtype=torch.float32, device=self.device)  # [B]
 
-        time_diffs = torch.cat([source_time_diffs, destination_time_diffs], dim=0)
+          # time diffs: [B]
+          src_last = last_update[torch.as_tensor(source_nodes, device=self.device)]
+          dst_last = last_update[torch.as_tensor(destination_nodes, device=self.device)]
+
+          source_time_diffs = edge_times_t - src_last
+          destination_time_diffs = edge_times_t - dst_last
+
+          # negative time diffs: [B] or [B*R]
+          neg_flat_t = torch.as_tensor(neg_flat, dtype=torch.long, device=self.device)         # [B*R] or [B]
+          neg_edge_times_t = torch.as_tensor(neg_timestamps, dtype=torch.float32, device=self.device)  # [B*R] or [B]
+          neg_last = last_update[neg_flat_t]
+          negative_time_diffs = neg_edge_times_t - neg_last
+
+          # standardize (more reasonable)
+          mean = float(self.mean_time_shift)
+          std = float(self.std_time_shift) if float(self.std_time_shift) != 0 else 1.0
+          source_time_diffs = (source_time_diffs - mean) / std
+          destination_time_diffs = (destination_time_diffs - mean) / std
+          negative_time_diffs = (negative_time_diffs - mean) / std
+
+          # concat to match nodes order: [B + B + (B*R)]
+          time_diffs = torch.cat([source_time_diffs, destination_time_diffs, negative_time_diffs], dim=0)
 
       node_embedding = self.embedding_module.compute_embedding(
           memory=memory,
@@ -157,45 +217,76 @@ class TGN(torch.nn.Module):
           time_diffs=time_diffs
       )
 
-      source_node_embedding = node_embedding[:n_samples]
-      destination_node_embedding = node_embedding[n_samples:]
+      source_node_embedding = node_embedding[:B]                       # [B,D]
+      destination_node_embedding = node_embedding[B:2 * B]            # [B,D]
+      negative_node_embedding_flat = node_embedding[2 * B:]           # [B*R,D] or [B,D]
 
-      
+      if R > 1:
+          negative_node_embedding = negative_node_embedding_flat.view(B, R, -1)  # [B,R,D]
+      else:
+          negative_node_embedding = negative_node_embedding_flat                # [B,D]
+
+      # ---- memory update (unchanged logic, but dyrep needs flatten for neg) ----
       if self.use_memory:
-        if self.memory_update_at_start:
-          self.update_memory(nodes, self.memory.messages)
-          assert torch.allclose(memory[nodes], self.memory.get_memory(nodes), atol=1e-5), "Something wrong in how the memory was updated" 
-          self.memory.clear_messages(nodes)
-        unique_sources, source_id_to_message = self.get_raw_messages(source_nodes,
-                                                                     source_node_embedding,
-                                                                     destination_nodes,
-                                                                     destination_node_embedding,
-                                                                     edge_times, edge_idxs)
-        unique_destinations, destination_id_to_message = self.get_raw_messages(destination_nodes,destination_node_embedding,source_nodes,source_node_embedding,edge_times, edge_idxs)
-        if self.memory_update_at_start:
-          self.memory.store_raw_messages(unique_sources, source_id_to_message)
-          self.memory.store_raw_messages(unique_destinations, destination_id_to_message)
-        else: 
-          '''
-          merged = merge_messages(source_id_to_message, destination_id_to_message)
-          unique_nodes = union(unique_sources, unique_destinations)
-          self.update_memory(unique_nodes, merged)
-          '''
-          self.update_memory(unique_sources, source_id_to_message)
-          self.update_memory(unique_destinations, destination_id_to_message)
+          if self.memory_update_at_start:
+              self.update_memory(nodes, self.memory.messages)
+              assert torch.allclose(memory[nodes], self.memory.get_memory(nodes), atol=1e-5), \
+                  "Something wrong in how the memory was updated"
+              self.memory.clear_messages(nodes)
 
-        if self.dyrep:
-          source_node_embedding = memory[source_nodes]
-          destination_node_embedding = memory[destination_nodes]
-      return source_node_embedding, destination_node_embedding
+          unique_sources, source_id_to_message = self.get_raw_messages(
+              source_nodes, source_node_embedding,
+              destination_nodes, destination_node_embedding,
+              edge_times, edge_idxs
+          )
+          unique_destinations, destination_id_to_message = self.get_raw_messages(
+              destination_nodes, destination_node_embedding,
+              source_nodes, source_node_embedding,
+              edge_times, edge_idxs
+          )
 
-  def compute_community_prob(self, source_nodes, destination_nodes, edge_times, edge_idxs, n_neighbors=20):
-      source_node_embedding, destination_node_embedding = self.compute_temporal_embeddings(
-          source_nodes, destination_nodes, edge_times, edge_idxs, n_neighbors=n_neighbors
+          if self.memory_update_at_start:
+              self.memory.store_raw_messages(unique_sources, source_id_to_message)
+              self.memory.store_raw_messages(unique_destinations, destination_id_to_message)
+          else:
+              self.update_memory(unique_sources, source_id_to_message)
+              self.update_memory(unique_destinations, destination_id_to_message)
+
+          if self.dyrep:
+              source_node_embedding = memory[torch.as_tensor(source_nodes, device=self.device)]
+              destination_node_embedding = memory[torch.as_tensor(destination_nodes, device=self.device)]
+              neg_mem_flat = memory[torch.as_tensor(neg_flat, device=self.device)]
+              negative_node_embedding = neg_mem_flat.view(B, R, -1) if R > 1 else neg_mem_flat
+
+      return source_node_embedding, destination_node_embedding, negative_node_embedding
+
+
+  def compute_community_prob(
+      self,
+      source_nodes,
+      destination_nodes,
+      negative_nodes,
+      edge_times,
+      edge_idxs,
+      n_neighbors=20
+  ):
+      """
+      Returns:
+        p_src: [B,K]
+        p_dst: [B,K]
+        p_neg: [B,K] or [B,R,K] (matches negative_nodes layout)
+      """
+      src_emb, dst_emb, neg_emb = self.compute_temporal_embeddings(
+          source_nodes, destination_nodes, negative_nodes, edge_times, edge_idxs, n_neighbors=n_neighbors
       )
-      source_community_prob = self.community_projector(source_node_embedding)
-      destination_community_prob = self.community_projector(destination_node_embedding)
-      return source_community_prob, destination_community_prob
+
+      p_src = self.community_projector(src_emb)  # [B,K]
+      p_dst = self.community_projector(dst_emb)  # [B,K]
+
+      # neg_emb can be [B,D] or [B,R,D]; projector supports both
+      p_neg = self.community_projector(neg_emb)
+
+      return p_src, p_dst, p_neg
   
   def update_memory(self, nodes, messages):
     # Aggregate messages for the same nodes
