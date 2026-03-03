@@ -1,5 +1,6 @@
 import torch
 import math
+import torch.nn.functional as F
 
 def temporal_modularity_k_weighted_neg_loss(
     p_src: torch.Tensor,     # [B,K]
@@ -11,9 +12,21 @@ def temporal_modularity_k_weighted_neg_loss(
     lam: float = 1.0,
     symmetric: bool = True,
     normalize_weights: bool = True,
+
     # --- collapse regularization ---
-    collapse_weight: float = 0.01,   # 建议从 0.01~1.0 试
-    collapse_from: str = "pos",     # "pos" or "all"
+    collapse_weight: float = 0.01,
+    collapse_from: str = "pos",
+
+    # --- temporal smoothness (node-level) ---
+    smooth_weight: float = 0.0,          # 建议从 0.01~1.0 试
+    smooth_mode: str = "l2",             # "l2" or "kl"
+    p_prev: torch.Tensor | None = None,  # [N,K] 上一次出现的分布表（外部维护）
+    nodes_src: torch.Tensor | None = None,  # [B] long
+    nodes_dst: torch.Tensor | None = None,  # [B] long
+    dt_src: torch.Tensor | None = None,     # [B] float，当前出现距离上次出现的时间差（可选）
+    dt_dst: torch.Tensor | None = None,     # [B] float（可选）
+    smooth_time_beta: float | None = None,  # 如果给了：权重=exp(-beta*dt)，dt越大惩罚越小
+
     eps: float = 1e-12,
 ):
     """
@@ -26,7 +39,10 @@ def temporal_modularity_k_weighted_neg_loss(
     Collapse regularization (DMoN-style):
       counts = sum over samples of p (per community mass)
       collapse = (sqrt(K)/M) * ||counts||_2 - 1, clamped >=0
-      loss = loss_base + collapse_weight * collapse
+
+    Temporal smoothness (node-level):
+      For each occurrence (u in src/dst), penalize distance between p_u(t) and p_prev[u]
+      optionally downweight by exp(-beta*dt) so long gaps are allowed to change more.
     """
     B, K = p_src.shape
     assert p_dst.shape == (B, K)
@@ -58,7 +74,6 @@ def temporal_modularity_k_weighted_neg_loss(
     loss_base = -Q
 
     # ---- collapse regularization ----
-    # Choose which probabilities to regularize
     if collapse_from == "pos":
         P = torch.cat([p_src, p_dst], dim=0)      # [2B,K]
     elif collapse_from == "all":
@@ -71,7 +86,41 @@ def temporal_modularity_k_weighted_neg_loss(
     collapse = (math.sqrt(K) / float(M)) * torch.norm(counts, p=2) - 1.0
     collapse = torch.clamp(collapse, min=0.0)
 
-    loss = loss_base + collapse_weight * collapse
+    # ---- temporal smoothness ----
+    smooth = torch.zeros((), device=p_src.device, dtype=p_src.dtype)
+    if smooth_weight > 0.0:
+        if p_prev is None or nodes_src is None or nodes_dst is None:
+            raise ValueError("smooth_weight>0 requires p_prev, nodes_src, nodes_dst")
+
+        # concat occurrences
+        nodes_all = torch.cat([nodes_src, nodes_dst], dim=0)          # [2B]
+        P_all = torch.cat([p_src, p_dst], dim=0)                      # [2B,K]
+        prev_all = p_prev[nodes_all].to(dtype=P_all.dtype)            # [2B,K]
+
+        if smooth_time_beta is not None:
+            if dt_src is None or dt_dst is None:
+                raise ValueError("smooth_time_beta given, but dt_src/dt_dst is None")
+            dt_all = torch.cat([dt_src, dt_dst], dim=0).to(dtype=P_all.dtype)  # [2B]
+            wt = torch.exp(-float(smooth_time_beta) * torch.clamp(dt_all, min=0.0))  # [2B]
+        else:
+            wt = None
+
+        if smooth_mode == "l2":
+            d = ((P_all - prev_all) ** 2).sum(dim=1)                  # [2B]
+        elif smooth_mode == "kl":
+            # KL(P_all || prev_all) （prev 是“上一时刻”分布，不需要 grad）
+            p = torch.clamp(P_all, min=eps)
+            q = torch.clamp(prev_all, min=eps)
+            d = (p * (p.log() - q.log())).sum(dim=1)                  # [2B]
+        else:
+            raise ValueError("smooth_mode must be 'l2' or 'kl'")
+
+        if wt is not None:
+            smooth = (wt * d).mean()
+        else:
+            smooth = d.mean()
+
+    loss = loss_base + collapse_weight * collapse + smooth_weight * smooth
 
     debug = {
         "pos_term": float(pos_term.item()),
@@ -80,7 +129,9 @@ def temporal_modularity_k_weighted_neg_loss(
         "loss_base": float(loss_base.item()),
         "collapse": float(collapse.item()),
         "collapse_weight": float(collapse_weight),
-        "collapse_from": collapse_from,
+        "smooth": float(smooth.item()),
+        "smooth_weight": float(smooth_weight),
+        "smooth_mode": smooth_mode,
         "lam": float(lam),
         "normalize_weights": bool(normalize_weights),
         "avg_k_src": float(k_src.mean().item()),

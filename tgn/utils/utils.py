@@ -87,8 +87,6 @@ class RandEdgeSampler(object):
     self.random_state = np.random.RandomState(self.seed)
 
 
-import numpy as np
-
 class NegativeNodeSampler:
     def __init__(self, all_nodes, seed=0, use_seen_pool=True):
         self.all_nodes = np.unique(np.asarray(all_nodes, dtype=np.int64))
