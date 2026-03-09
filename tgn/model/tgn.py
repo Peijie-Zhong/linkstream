@@ -248,8 +248,7 @@ class TGN(torch.nn.Module):
 
     return updated_memory, updated_last_update
 
-  def get_raw_messages(self, source_nodes, source_node_embedding, destination_nodes,
-                       destination_node_embedding, edge_times, edge_idxs):
+  def get_raw_messages(self, source_nodes, source_node_embedding, destination_nodes, destination_node_embedding, edge_times, edge_idxs):
     edge_times = torch.from_numpy(edge_times).float().to(self.device)
     edge_features = self.edge_raw_features[edge_idxs]
 

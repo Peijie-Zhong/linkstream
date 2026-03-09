@@ -1,0 +1,14 @@
+{
+  "interaction_path": "../syn_data/p0.8_mu0.2_1.csv",
+  "emb_path": "p0.8_mu0.2_1_node_feat.emb",
+  "num_events": 469,
+  "embedding_dim": 64,
+  "time_dim": 32,
+  "output_dim": 96,
+  "time_mean": 133.76119995117188,
+  "time_std": 140.98509216308594,
+  "sort_by_time": true,
+  "fill_missing": "zero",
+  "num_missing_nodes": 0,
+  "missing_nodes_sample": []
+}

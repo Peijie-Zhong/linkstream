@@ -18,54 +18,40 @@ def temporal_modularity_k_weighted_neg_loss(
     collapse_from: str = "pos",
 
     # --- temporal smoothness (node-level) ---
-    smooth_weight: float = 0.0,          # 建议从 0.01~1.0 试
-    smooth_mode: str = "l2",             # "l2" or "kl"
-    p_prev: torch.Tensor | None = None,  # [N,K] 上一次出现的分布表（外部维护）
-    nodes_src: torch.Tensor | None = None,  # [B] long
-    nodes_dst: torch.Tensor | None = None,  # [B] long
-    dt_src: torch.Tensor | None = None,     # [B] float，当前出现距离上次出现的时间差（可选）
-    dt_dst: torch.Tensor | None = None,     # [B] float（可选）
-    smooth_time_beta: float | None = None,  # 如果给了：权重=exp(-beta*dt)，dt越大惩罚越小
+    smooth_weight: float = 0.0,
+    smooth_mode: str = "l2",
+    p_prev: torch.Tensor | None = None,
+    nodes_src: torch.Tensor | None = None,
+    nodes_dst: torch.Tensor | None = None,
+    dt_src: torch.Tensor | None = None,
+    dt_dst: torch.Tensor | None = None,
+    smooth_time_beta: float | None = None,
 
     eps: float = 1e-12,
 ):
-    """
-    Base:
-      pos = mean_i <p_src[i], p_dst[i]>
-      w_ir = k_src[i] * k_neg[i,r]
-      neg = weighted mean similarity to negatives
-      loss_base = -(pos - lam*neg)
 
-    Collapse regularization (DMoN-style):
-      counts = sum over samples of p (per community mass)
-      collapse = (sqrt(K)/M) * ||counts||_2 - 1, clamped >=0
-
-    Temporal smoothness (node-level):
-      For each occurrence (u in src/dst), penalize distance between p_u(t) and p_prev[u]
-      optionally downweight by exp(-beta*dt) so long gaps are allowed to change more.
-    """
     B, K = p_src.shape
     assert p_dst.shape == (B, K)
     assert p_neg.dim() == 3 and p_neg.shape[0] == B and p_neg.shape[2] == K
     assert k_src.shape == (B,)
     assert k_neg.shape[:2] == p_neg.shape[:2]
 
-    # ---- pos term ----
+
     pos_term = (p_src * p_dst).sum(dim=1).mean()
 
-    # ---- weights ----
-    w = (k_src.to(p_src.dtype).unsqueeze(1) * k_neg.to(p_src.dtype))  # [B,R]
+
+    w = (k_src.to(p_src.dtype).unsqueeze(1) * k_neg.to(p_src.dtype))
     w = torch.clamp(w, min=0.0)
     if normalize_weights:
-        w = w / (w.sum(dim=1, keepdim=True).clamp_min(eps))           # [B,R]
+        w = w / (w.sum(dim=1, keepdim=True).clamp_min(eps))  
 
-    # ---- neg term ----
-    sim_src = (p_src.unsqueeze(1) * p_neg).sum(dim=2)                 # [B,R]
-    neg_i_src = (w * sim_src).sum(dim=1)                              # [B]
+
+    sim_src = (p_src.unsqueeze(1) * p_neg).sum(dim=2)
+    neg_i_src = (w * sim_src).sum(dim=1)
 
     if symmetric:
-        sim_dst = (p_dst.unsqueeze(1) * p_neg).sum(dim=2)             # [B,R]
-        neg_i_dst = (w * sim_dst).sum(dim=1)                          # [B]
+        sim_dst = (p_dst.unsqueeze(1) * p_neg).sum(dim=2) 
+        neg_i_dst = (w * sim_dst).sum(dim=1)
         neg_term = 0.5 * (neg_i_src.mean() + neg_i_dst.mean())
     else:
         neg_term = neg_i_src.mean()
@@ -75,14 +61,14 @@ def temporal_modularity_k_weighted_neg_loss(
 
     # ---- collapse regularization ----
     if collapse_from == "pos":
-        P = torch.cat([p_src, p_dst], dim=0)      # [2B,K]
+        P = torch.cat([p_src, p_dst], dim=0)
     elif collapse_from == "all":
-        P = torch.cat([p_src, p_dst, p_neg.reshape(-1, K)], dim=0)  # [2B + BR, K]
+        P = torch.cat([p_src, p_dst, p_neg.reshape(-1, K)], dim=0)
     else:
         raise ValueError("collapse_from must be 'pos' or 'all'")
 
     M = P.shape[0]
-    counts = P.sum(dim=0)                         # [K]
+    counts = P.sum(dim=0)
     collapse = (math.sqrt(K) / float(M)) * torch.norm(counts, p=2) - 1.0
     collapse = torch.clamp(collapse, min=0.0)
 

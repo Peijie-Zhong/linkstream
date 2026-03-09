@@ -54,6 +54,16 @@ def get_data(dataset_name, filepath, node_embedding_method):
     elif node_embedding_method == "one-hot":
        print("Use one-hot init for node embedding. ")
        node_features = np.eye(num_nodes, dtype=np.float32)  
+
+    elif node_embedding_method == "ctdne":
+      ctdne_feat_path = f'pretrain/{dataset_name}.npy'
+      if os.path.exists(ctdne_feat_path):
+        print(f"Loading CTDNE node features: {ctdne_feat_path}")
+        node_features = np.load(ctdne_feat_path, allow_pickle=True).astype(np.float32)
+      else:
+        raise FileNotFoundError(
+          f"Cannot find random walk embedding in {ctdne_feat_path}, run pretrain.py before."
+        )
     else:
       raise ValueError(
           f"Unsupported node_embedding_method: {node_embedding_method}. "

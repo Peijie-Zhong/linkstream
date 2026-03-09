@@ -99,7 +99,7 @@ class GraphEmbedding(EmbeddingModule):
                                                            n_layers=n_layers - 1,
                                                            n_neighbors=n_neighbors)
       
-      neighbors, edge_idxs, edge_times = self.neighbor_finder.get_temporal_neighbor(
+      neighbors, edge_idxs, edge_times = self.neighbor_finder.get_temporal_neighbor_bidirection(
         source_nodes,
         timestamps,
         n_neighbors=n_neighbors)

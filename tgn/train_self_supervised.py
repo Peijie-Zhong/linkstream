@@ -33,8 +33,7 @@ parser.add_argument('--drop_out', type=float, default=0.1, help='Dropout probabi
 parser.add_argument('--gpu', type=int, default=0, help='Idx for the gpu to use')
 parser.add_argument('--node_dim', type=int, default=100, help='Dimensions of the node embedding')
 parser.add_argument('--time_dim', type=int, default=100, help='Dimensions of the time embedding')
-parser.add_argument('--backprop_every', type=int, default=1, help='Every how many batches to '
-                                                                  'backprop')
+parser.add_argument('--backprop_every', type=int, default=1, help='Every how many batches to backprop')
 parser.add_argument('--use_memory', action='store_true',
                     help='Whether to augment the model with a node memory')
 parser.add_argument('--embedding_module', type=str, default="graph_attention", choices=[

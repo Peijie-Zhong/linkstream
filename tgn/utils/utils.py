@@ -87,45 +87,15 @@ class RandEdgeSampler(object):
     self.random_state = np.random.RandomState(self.seed)
 
 
-class NegativeNodeSampler:
-    def __init__(self, all_nodes, seed=0, use_seen_pool=True):
-        self.all_nodes = np.unique(np.asarray(all_nodes, dtype=np.int64))
-        self.rng = np.random.RandomState(seed)
-        self.use_seen_pool = bool(use_seen_pool)
-        self.seen = set()
-
-    def update_seen(self, src, dst):
-        # call after processing a batch
-        for x in np.asarray(src, dtype=np.int64).tolist():
-            self.seen.add(int(x))
-        for x in np.asarray(dst, dtype=np.int64).tolist():
-            self.seen.add(int(x))
-
-    def sample(self, B, R):
-        """
-        Returns neg_nodes: np.ndarray [B,R] int64
-        """
-        B = int(B); R = int(R)
-        if B <= 0 or R <= 0:
-            return np.empty((0, 0), dtype=np.int64)
-
-        if self.use_seen_pool and len(self.seen) > 0:
-            pool = np.fromiter(self.seen, dtype=np.int64)
-        else:
-            pool = self.all_nodes
-
-        neg = self.rng.choice(pool, size=B * R, replace=True).astype(np.int64)
-        return neg.reshape(B, R)
-
-
 def get_neighbor_finder(data, uniform, max_node_idx=None):
   max_node_idx = max(data.sources.max(), data.destinations.max()) if max_node_idx is None else max_node_idx
   adj_list = [[] for _ in range(max_node_idx + 1)]
-  for source, destination, timestamp in zip(data.sources,
+  for source, destination, edge_idx, timestamp in zip(data.sources,
                                               data.destinations,
+                                              data.edge_idxs,
                                               data.timestamps):
-    adj_list[source].append((destination, timestamp))
-    adj_list[destination].append((source, timestamp))
+    adj_list[source].append((destination, edge_idx, timestamp))
+    adj_list[destination].append((source, edge_idx, timestamp))
 
   return NeighborFinder(adj_list, uniform=uniform)
 
@@ -150,6 +120,17 @@ class NeighborFinder:
       self.seed = seed
       self.random_state = np.random.RandomState(self.seed)
 
+
+  def find_all(self, src_idx):
+    """
+    Extracts all the interactions happening before cut_time for user src_idx in the overall interaction graph. The returned interactions are sorted by time.
+
+    Returns 3 lists: neighbors, edge_idxs, timestamps
+    """
+
+    return self.node_to_neighbors[src_idx], self.node_to_edge_idxs[src_idx], self.node_to_edge_timestamps[src_idx]
+  
+
   def find_before(self, src_idx, cut_time):
     """
     Extracts all the interactions happening before cut_time for user src_idx in the overall interaction graph. The returned interactions are sorted by time.
@@ -161,16 +142,14 @@ class NeighborFinder:
 
     return self.node_to_neighbors[src_idx][:i], self.node_to_edge_idxs[src_idx][:i], self.node_to_edge_timestamps[src_idx][:i]
   
-  def find_near(self, src_idx, cut_time):
-    """
-    Extracts all the interactions happening near cut_time for user src_idx in the overall interaction graph. The returned interactions are sorted by time.
-
-    Returns 3 lists: neighbors, edge_idxs, timestamps
-
-    """
-    i = np.searchsorted(self.node_to_edge_timestamps[src_idx], cut_time)
-
-    return self.node_to_neighbors[src_idx][:i], self.node_to_edge_idxs[src_idx][:i], self.node_to_edge_timestamps[src_idx][:i]
+  def find_after(self, src_idx, cut_time):
+    i = np.searchsorted(self.node_to_edge_timestamps[src_idx], cut_time, side="right")
+    return (
+      self.node_to_neighbors[src_idx][i:],
+      self.node_to_edge_idxs[src_idx][i:],
+      self.node_to_edge_timestamps[src_idx][i:],
+    )
+  
 
   def get_temporal_neighbor(self, source_nodes, timestamps, n_neighbors=20):
     """
@@ -226,17 +205,8 @@ class NeighborFinder:
     return neighbors, edge_idxs, edge_times
   
 
-  def get_temporal_neighbor_near(self, source_nodes, timestamps, n_neighbors=20):
-    """
-    Given a list of users ids and relative cut times, extracts a sampled temporal neighborhood of each user in the list.
-
-    Params
-    ------
-    src_idx_l: List[int]
-    cut_time_l: List[float],
-    num_neighbors: int
-    """
-    assert (len(source_nodes) == len(timestamps)), "source node length neq timestamps."
+  def get_temporal_neighbor_bidirection(self, source_nodes, timestamps, n_neighbors=20):
+    assert len(source_nodes) == len(timestamps), "source node length neq timestamps."
 
     tmp_n_neighbors = n_neighbors if n_neighbors > 0 else 1
 
@@ -244,13 +214,17 @@ class NeighborFinder:
     edge_idxs = np.full((len(source_nodes), tmp_n_neighbors), -1, dtype=np.int32)
     edge_times = np.zeros((len(source_nodes), tmp_n_neighbors), dtype=np.float32)
 
-
     for i, (source_node, timestamp) in enumerate(zip(source_nodes, timestamps)):
-      source_neighbors, source_edge_idxs, source_edge_times = self.find_near(source_node, timestamp)  # extracts all neighbors, interactions indexes and timestamps of all interactions of user source_node happening before cut_time
+      past_neighbors, past_edge_idxs, past_edge_times = self.find_before(source_node, timestamp)
+      future_neighbors, future_edge_idxs, future_edge_times = self.find_after(source_node, timestamp)
+
+      source_neighbors = np.concatenate([past_neighbors, future_neighbors])
+      source_edge_idxs = np.concatenate([past_edge_idxs, future_edge_idxs])
+      source_edge_times = np.concatenate([past_edge_times, future_edge_times])
 
       if len(source_neighbors) > 0 and n_neighbors > 0:
-        if self.uniform:  # if we are applying uniform sampling, shuffles the data above before sampling
-          if hasattr(self, 'random_state'):
+        if self.uniform:
+          if hasattr(self, "random_state"):
             sampled_idx = self.random_state.randint(0, len(source_neighbors), n_neighbors)
           else:
             sampled_idx = np.random.randint(0, len(source_neighbors), n_neighbors)
@@ -259,23 +233,23 @@ class NeighborFinder:
           edge_times[i, :] = source_edge_times[sampled_idx]
           edge_idxs[i, :] = source_edge_idxs[sampled_idx]
 
-          # re-sort based on time
           pos = edge_times[i, :].argsort()
           neighbors[i, :] = neighbors[i, :][pos]
           edge_times[i, :] = edge_times[i, :][pos]
           edge_idxs[i, :] = edge_idxs[i, :][pos]
-        else:
-          # Take most recent interactions
-          source_edge_times = source_edge_times[-n_neighbors:]
-          source_neighbors = source_neighbors[-n_neighbors:]
-          source_edge_idxs = source_edge_idxs[-n_neighbors:]
+      else:
+        dist = np.abs(source_edge_times - timestamp)
+        order = np.argsort(dist)
+        keep = order[:n_neighbors]
 
-          assert (len(source_neighbors) <= n_neighbors)
-          assert (len(source_edge_times) <= n_neighbors)
-          assert (len(source_edge_idxs) <= n_neighbors)
+        keep = keep[np.argsort(source_edge_times[keep])]
 
-          neighbors[i, n_neighbors - len(source_neighbors):] = source_neighbors
-          edge_times[i, n_neighbors - len(source_edge_times):] = source_edge_times
-          edge_idxs[i, n_neighbors - len(source_edge_idxs):] = source_edge_idxs
+        sel_neighbors = source_neighbors[keep]
+        sel_edge_times = source_edge_times[keep]
+        sel_edge_idxs = source_edge_idxs[keep]
+
+        neighbors[i, n_neighbors - len(sel_neighbors):] = sel_neighbors
+        edge_times[i, n_neighbors - len(sel_edge_times):] = sel_edge_times
+        edge_idxs[i, n_neighbors - len(sel_edge_idxs):] = sel_edge_idxs
 
     return neighbors, edge_idxs, edge_times
