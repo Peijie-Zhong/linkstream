@@ -4,19 +4,18 @@ import pandas as pd
 import os
 
 class Data:
-  def __init__(self, sources, destinations, timestamps, edge_idxs, timestamp_norm):
+  def __init__(self, sources, destinations, timestamps, edge_idxs):
     self.sources = sources
     self.destinations = destinations
     self.timestamps = timestamps
     self.edge_idxs = edge_idxs
-    self.timestamp_norm = timestamp_norm
     
     self.n_interactions = len(sources)
     self.unique_nodes = set(sources) | set(destinations)
     self.n_unique_nodes = len(self.unique_nodes)
 
 
-def get_data(dataset_name, filepath, node_embedding_method):
+def get_data(dataset_name, filepath, node_embedding_method, node2id=None):
   DEFAULT_DIM = 16
   graph_df = pd.read_csv(filepath.format(dataset_name))
 
@@ -24,7 +23,6 @@ def get_data(dataset_name, filepath, node_embedding_method):
   destinations = graph_df.destination.values
   edge_idxs = graph_df.idx.values
   timestamps = graph_df.timestamp.values
-  timestamp_norm = graph_df.timestamp_norm.values
 
   max_node_idx = max(sources.max(), destinations.max())
   num_nodes = max_node_idx + 1
@@ -59,7 +57,41 @@ def get_data(dataset_name, filepath, node_embedding_method):
       ctdne_feat_path = f'pretrain/{dataset_name}.npy'
       if os.path.exists(ctdne_feat_path):
         print(f"Loading CTDNE node features: {ctdne_feat_path}")
-        node_features = np.load(ctdne_feat_path, allow_pickle=True).astype(np.float32)
+        raw_node_features = np.load(ctdne_feat_path, allow_pickle=True).astype(np.float32)
+        if node2id is None:
+          raise ValueError(
+            "node2id must be provided when node_embedding_method='ctdne', "
+            "because the CTDNE .npy rows are ordered by original node id, "
+            "while full_data uses internal node ids."
+          )
+        feat_dim = raw_node_features.shape[1]
+        node_features = np.zeros((num_nodes, feat_dim), dtype=np.float32)
+
+        out_of_range_original_nodes = []
+
+        for original_node, internal_id in node2id.items():
+          orig = int(original_node)
+          internal = int(internal_id)
+
+          if orig < 0 or orig >= raw_node_features.shape[0]:
+            out_of_range_original_nodes.append(orig)
+            continue
+
+          if internal < 0 or internal >= num_nodes:
+            raise ValueError(
+              f"internal node id {internal} out of valid range [0, {num_nodes - 1}]"
+            )
+
+          node_features[internal] = raw_node_features[orig]
+
+        if len(out_of_range_original_nodes) > 0:
+          print(f"[WARN] {len(out_of_range_original_nodes)} original node ids are out of range for {ctdne_feat_path}")
+          print("[WARN] sample:", out_of_range_original_nodes[:20])
+
+        print("Remapped CTDNE node features from original node ids to internal node ids")
+        print("raw_node_features shape:", raw_node_features.shape)
+        print("remapped node_features shape:", node_features.shape)
+
       else:
         raise FileNotFoundError(
           f"Cannot find random walk embedding in {ctdne_feat_path}, run pretrain.py before."
@@ -71,7 +103,7 @@ def get_data(dataset_name, filepath, node_embedding_method):
       )
     
 
-  full_data = Data(sources, destinations, timestamps, edge_idxs, timestamp_norm)
+  full_data = Data(sources, destinations, timestamps, edge_idxs)
 
   print("The dataset has {} interactions, involving {} different nodes".format(full_data.n_interactions,full_data.n_unique_nodes))
   return node_features, edge_features, full_data

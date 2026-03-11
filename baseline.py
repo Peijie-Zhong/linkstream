@@ -101,9 +101,3 @@ def louvain(file_path: str) -> str:
 
     return str(out_path)
 
-
-# iteration modularity maximisation
-# snapshot based algorithm
-def iter_mod_max(file_path):
-
-    return "NotImplement"

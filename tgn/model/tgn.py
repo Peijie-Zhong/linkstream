@@ -170,10 +170,10 @@ class TGN(torch.nn.Module):
         self.memory.clear_messages(positives)
 
       unique_sources, source_id_to_messages = self.get_raw_messages(source_nodes,
-                                                                    source_node_embedding,
-                                                                    destination_nodes,
-                                                                    destination_node_embedding,
-                                                                    edge_times, edge_idxs)
+                              source_node_embedding,
+                              destination_nodes,
+                              destination_node_embedding,
+                              edge_times, edge_idxs)
       unique_destinations, destination_id_to_messages = self.get_raw_messages(destination_nodes,
                             destination_node_embedding,
                             source_nodes,

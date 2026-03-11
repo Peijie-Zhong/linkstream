@@ -38,7 +38,6 @@ def longitudinal_modularity(
 
     ### 1 - Get nb links inside communities
     communities_nb_interactions = _get_communities_nb_interactions(linkstream)
-    print(f"community nb interaction:{communities_nb_interactions}")
     ### 2 - Get expectations values
     communities_expectations = {}
     if lex_type == "CM":
@@ -140,7 +139,6 @@ def _get_communities_mmes(
         nodes_durations = get_nodes_durations(
             module_leaves=leaves,
         )
-        print(nodes_durations)
 
         community_nodes = set([leaf.node for leaf in leaves])
         numer = 0
@@ -150,8 +148,6 @@ def _get_communities_mmes(
     
         communities_expectations[commu] = expectation
     
-
-    print(f"community expectations mme from @l_modularity_function.py:{communities_expectations}")
     return communities_expectations
 
 

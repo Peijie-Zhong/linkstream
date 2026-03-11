@@ -13,3 +13,5 @@ syn_data/
 results/
 GenLouvain/
 IterModMax/
+pretrain/*.npy
+preprocess/*.csv
