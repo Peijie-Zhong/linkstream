@@ -66,7 +66,7 @@ class GraphEmbedding(EmbeddingModule):
     self.use_memory = use_memory
     self.device = device
 
-  def compute_embedding(self, memory, source_nodes, timestamps, n_layers, n_neighbors=20, time_diffs=None, use_time_proj=True):
+  def compute_embedding(self, memory, source_nodes, timestamps, n_layers, n_neighbors=20, time_diffs=None, use_time_proj=True, bidirection = False):
     """Recursive implementation of curr_layers temporal graph attention layers.
 
     src_idx_l [batch_size]: users / items input ids.
@@ -99,11 +99,16 @@ class GraphEmbedding(EmbeddingModule):
                                                            n_layers=n_layers - 1,
                                                            n_neighbors=n_neighbors)
       
-      neighbors, edge_idxs, edge_times = self.neighbor_finder.get_temporal_neighbor_bidirection(
+      if bidirection:
+        neighbors, edge_idxs, edge_times = self.neighbor_finder.get_temporal_neighbor_bidirection(
         source_nodes,
         timestamps,
         n_neighbors=n_neighbors)
-
+      else: 
+        neighbors, edge_idxs, edge_times = self.neighbor_finder.get_temporal_neighbor(
+        source_nodes,
+        timestamps,
+        n_neighbors=n_neighbors)
       neighbors_torch = torch.from_numpy(neighbors).long().to(self.device)
 
       edge_idxs = torch.from_numpy(edge_idxs).long().to(self.device)

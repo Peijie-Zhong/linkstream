@@ -3,13 +3,13 @@ import numpy as np
 import torch
 from collections import defaultdict
 
-from utils.utils import MergeLayer
-from modules.memory import Memory
-from modules.message_aggregator import get_message_aggregator
-from modules.message_function import get_message_function
-from modules.memory_updater import get_memory_updater
-from modules.embedding_module import get_embedding_module
-from model.time_encoding import TimeEncode
+from tgn.utils.utils import MergeLayer
+from tgn.modules.memory import Memory
+from tgn.modules.message_aggregator import get_message_aggregator
+from tgn.modules.message_function import get_message_function
+from tgn.modules.memory_updater import get_memory_updater
+from tgn.modules.embedding_module import get_embedding_module
+from tgn.model.time_encoding import TimeEncode
 
 
 class TGN(torch.nn.Module):
@@ -23,8 +23,10 @@ class TGN(torch.nn.Module):
                memory_updater_type="gru",
                use_destination_embedding_in_message=False,
                use_source_embedding_in_message=False,
-               dyrep=False
+               dyrep=False,
+               bidirection=False
                ):
+    
     super(TGN, self).__init__()
 
     self.n_layers = n_layers
@@ -44,7 +46,7 @@ class TGN(torch.nn.Module):
     self.use_destination_embedding_in_message = use_destination_embedding_in_message
     self.use_source_embedding_in_message = use_source_embedding_in_message
     self.dyrep = dyrep
-  
+    self.bidirection = bidirection
 
     self.use_memory = use_memory
     self.time_encoder = TimeEncode(dimension=self.n_node_features)
@@ -151,7 +153,8 @@ class TGN(torch.nn.Module):
                                                              timestamps=timestamps,
                                                              n_layers=self.n_layers,
                                                              n_neighbors=n_neighbors,
-                                                             time_diffs=time_diffs)
+                                                             time_diffs=time_diffs,
+                                                             bidirection=self.bidirection)
 
     source_node_embedding = node_embedding[:n_samples]
     destination_node_embedding = node_embedding[n_samples: 2 * n_samples]

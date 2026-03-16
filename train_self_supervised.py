@@ -8,18 +8,17 @@ import numpy as np
 import pickle
 from pathlib import Path
 
-from evaluation.evaluation import eval_edge_prediction
-from model.tgn import TGN
-from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
-from utils.data_processing import get_data, compute_time_statistics
+from tgn.evaluation.evaluation import eval_edge_prediction
+from tgn.model.tgn import TGN
+from tgn.utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
+from tgn.utils.data_processing import get_data, compute_time_statistics
 
 torch.manual_seed(0)
 np.random.seed(0)
 
 ### Argument and global variables
 parser = argparse.ArgumentParser('TGN self-supervised training')
-parser.add_argument('-d', '--data', type=str, help='Dataset name (eg. wikipedia or reddit)',
-                    default='wikipedia')
+parser.add_argument('-d', '--data', type=str, help='Dataset name (eg. wikipedia or reddit)', default='wikipedia')
 parser.add_argument('--bs', type=int, default=200, help='Batch_size')
 parser.add_argument('--prefix', type=str, default='', help='Prefix to name the checkpoints')
 parser.add_argument('--n_degree', type=int, default=10, help='Number of neighbors to sample')
@@ -33,8 +32,7 @@ parser.add_argument('--drop_out', type=float, default=0.1, help='Dropout probabi
 parser.add_argument('--gpu', type=int, default=0, help='Idx for the gpu to use')
 parser.add_argument('--node_dim', type=int, default=100, help='Dimensions of the node embedding')
 parser.add_argument('--time_dim', type=int, default=100, help='Dimensions of the time embedding')
-parser.add_argument('--backprop_every', type=int, default=1, help='Every how many batches to '
-                                                                  'backprop')
+parser.add_argument('--backprop_every', type=int, default=1, help='Every how many batches to backprop')
 parser.add_argument('--use_memory', action='store_true',
                     help='Whether to augment the model with a node memory')
 parser.add_argument('--embedding_module', type=str, default="graph_attention", choices=[
@@ -43,8 +41,7 @@ parser.add_argument('--message_function', type=str, default="identity", choices=
   "mlp", "identity"], help='Type of message function')
 parser.add_argument('--memory_updater', type=str, default="gru", choices=[
   "gru", "rnn"], help='Type of memory updater')
-parser.add_argument('--aggregator', type=str, default="last", help='Type of message '
-                                                                        'aggregator')
+parser.add_argument('--aggregator', type=str, default="last", help='Type of message aggregator')
 parser.add_argument('--memory_update_at_end', action='store_true',
                     help='Whether to update memory at the end or at the start of the batch')
 parser.add_argument('--message_dim', type=int, default=100, help='Dimensions of the messages')
@@ -58,8 +55,7 @@ parser.add_argument('--randomize_features', action='store_true',
                     help='Whether to randomize node features')
 parser.add_argument('--use_destination_embedding_in_message', action='store_true',
                     help='Whether to use the embedding of the destination node as part of the message')
-parser.add_argument('--use_source_embedding_in_message', action='store_true',
-                    help='Whether to use the embedding of the source node as part of the message')
+parser.add_argument('--use_source_embedding_in_message', action='store_true',help='Whether to use the embedding of the source node as part of the message')
 parser.add_argument('--dyrep', action='store_true',
                     help='Whether to run the dyrep model')
 
@@ -124,8 +120,7 @@ full_ngh_finder = get_neighbor_finder(full_data, args.uniform)
 # NB: in the inductive setting, negatives are sampled only amongst other new nodes
 train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
 val_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=0)
-nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations,
-                                      seed=1)
+nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations, seed=1)
 test_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=2)
 nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources,
                                        new_node_test_data.destinations,
@@ -217,8 +212,7 @@ for i in range(args.n_runs):
           neg_label = torch.zeros(size, dtype=torch.float, device=device)
 
         tgn = tgn.train()
-        pos_prob, neg_prob = tgn.compute_edge_probabilities(sources_batch, destinations_batch, negatives_batch,
-                                                            timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
+        pos_prob, neg_prob = tgn.compute_edge_probabilities(sources_batch, destinations_batch, negatives_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
 
         loss += criterion(pos_prob.squeeze(), pos_label) + criterion(neg_prob.squeeze(), neg_label)
 
@@ -246,9 +240,9 @@ for i in range(args.n_runs):
       train_memory_backup = tgn.memory.backup_memory()
 
     val_ap, val_auc = eval_edge_prediction(model=tgn,
-                                                            negative_edge_sampler=val_rand_sampler,
-                                                            data=val_data,
-                                                            n_neighbors=NUM_NEIGHBORS)
+                                            negative_edge_sampler=val_rand_sampler,
+                                            data=val_data,
+                                            n_neighbors=NUM_NEIGHBORS)
     if USE_MEMORY:
       val_memory_backup = tgn.memory.backup_memory()
       # Restore memory we had at the end of training to be used when validating on new nodes.
