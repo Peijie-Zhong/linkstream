@@ -237,19 +237,19 @@ class NeighborFinder:
           neighbors[i, :] = neighbors[i, :][pos]
           edge_times[i, :] = edge_times[i, :][pos]
           edge_idxs[i, :] = edge_idxs[i, :][pos]
-      else:
-        dist = np.abs(source_edge_times - timestamp)
-        order = np.argsort(dist)
-        keep = order[:n_neighbors]
+        else:
+          dist = np.abs(source_edge_times - timestamp)
+          order = np.argsort(dist)
+          keep = order[:n_neighbors]
 
-        keep = keep[np.argsort(source_edge_times[keep])]
+          keep = keep[np.argsort(source_edge_times[keep])]
 
-        sel_neighbors = source_neighbors[keep]
-        sel_edge_times = source_edge_times[keep]
-        sel_edge_idxs = source_edge_idxs[keep]
+          sel_neighbors = source_neighbors[keep]
+          sel_edge_times = source_edge_times[keep]
+          sel_edge_idxs = source_edge_idxs[keep]
 
-        neighbors[i, n_neighbors - len(sel_neighbors):] = sel_neighbors
-        edge_times[i, n_neighbors - len(sel_edge_times):] = sel_edge_times
-        edge_idxs[i, n_neighbors - len(sel_edge_idxs):] = sel_edge_idxs
+          neighbors[i, n_neighbors - len(sel_neighbors):] = sel_neighbors
+          edge_times[i, n_neighbors - len(sel_edge_times):] = sel_edge_times
+          edge_idxs[i, n_neighbors - len(sel_edge_idxs):] = sel_edge_idxs
 
     return neighbors, edge_idxs, edge_times

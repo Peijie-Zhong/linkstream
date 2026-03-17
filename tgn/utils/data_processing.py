@@ -77,7 +77,8 @@ def get_data(
     node_features = np.load(node_feat_path)
   else:
     node_features = np.random.rand(num_nodes, default_node_feat_dim).astype(np.float32)
-
+    #print("Use one-hot init for node embedding. ")
+    #node_features = np.eye(num_nodes, dtype=np.float32)  
   if randomize_features:
     node_features = np.random.rand(node_features.shape[0], node_features.shape[1]).astype(np.float32)
 
