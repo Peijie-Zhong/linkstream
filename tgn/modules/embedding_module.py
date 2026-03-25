@@ -92,7 +92,6 @@ class GraphEmbedding(EmbeddingModule):
     if n_layers == 0:
       return source_node_features
     else:
-
       source_node_conv_embeddings = self.compute_embedding(memory,
                                                            source_nodes,
                                                            timestamps,

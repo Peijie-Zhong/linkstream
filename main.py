@@ -8,7 +8,6 @@ importlib.reload(sys.modules['tgn.utils.my_data'])
 from tgn.utils.utils import get_neighbor_finder
 importlib.reload(sys.modules['tgn.utils.utils'])
 from tgn.utils.my_data import get_data, compute_time_statistics, compute_time_statistics_undirected
-importlib.reload(sys.modules['tgn.utils.my_data'])
 from tgn.utils.my_data import get_data  
 import numpy as np
 import torch

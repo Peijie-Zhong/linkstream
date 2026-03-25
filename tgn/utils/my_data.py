@@ -48,7 +48,7 @@ def get_data(dataset_name, filepath, node_embedding_method, node2id=None):
     elif node_embedding_method == "random":
        print("Use random init for node embedding. ")
        rng = np.random.default_rng(42)
-       node_features = rng.standard_normal((num_nodes, DEFAULT_DIM).astype(np.float32))
+       node_features = rng.standard_normal((num_nodes, DEFAULT_DIM), dtype=np.float32)
     elif node_embedding_method == "one-hot":
        print("Use one-hot init for node embedding. ")
        node_features = np.eye(num_nodes, dtype=np.float32)  
