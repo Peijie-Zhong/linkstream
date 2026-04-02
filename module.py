@@ -222,7 +222,6 @@ class TimeEncode(torch.nn.Module):
         return harmonic #self.dense(harmonic)
     
     
-    
 class PosEncode(torch.nn.Module):
     def __init__(self, expand_dim, seq_len):
         super().__init__()

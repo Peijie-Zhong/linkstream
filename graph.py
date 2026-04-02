@@ -86,6 +86,43 @@ class NeighborFinder:
         else:
             return neighbors_idx[:left], neighbors_e_idx[:left], neighbors_ts[:left]
 
+    def find_after(self, src_idx, cut_time):
+        """
+        Params
+        ------
+        src_idx: int
+        cut_time: float
+        """
+        node_idx_l = self.node_idx_l
+        node_ts_l = self.node_ts_l
+        edge_idx_l = self.edge_idx_l
+        off_set_l = self.off_set_l
+
+        neighbors_idx = node_idx_l[off_set_l[src_idx]:off_set_l[src_idx + 1]]
+        neighbors_ts = node_ts_l[off_set_l[src_idx]:off_set_l[src_idx + 1]]
+        neighbors_e_idx = edge_idx_l[off_set_l[src_idx]:off_set_l[src_idx + 1]]
+
+        if len(neighbors_idx) == 0 or len(neighbors_ts) == 0:
+            return neighbors_idx, neighbors_e_idx, neighbors_ts
+
+        left = 0
+        right = len(neighbors_idx) - 1
+
+        while left + 1 < right:
+            mid = (left + right) // 2
+            curr_t = neighbors_ts[mid]
+            if curr_t <= cut_time:
+                left = mid
+            else:
+                right = mid
+
+        if neighbors_ts[left] > cut_time:
+            return neighbors_idx[left:], neighbors_e_idx[left:], neighbors_ts[left:]
+        elif neighbors_ts[right] > cut_time:
+            return neighbors_idx[right:], neighbors_e_idx[right:], neighbors_ts[right:]
+        else:
+            return neighbors_idx[0:0], neighbors_e_idx[0:0], neighbors_ts[0:0]
+
     def get_temporal_neighbor(self, src_idx_l, cut_time_l, num_neighbors=20):
         """
         Params
@@ -131,10 +168,75 @@ class NeighborFinder:
                     
         return out_ngh_node_batch, out_ngh_eidx_batch, out_ngh_t_batch
 
-    def find_k_hop(self, k, src_idx_l, cut_time_l, num_neighbors=20):
+    def get_temporal_neighbor_bidirection(self, src_idx_l, cut_time_l, num_neighbors=20):
+        """
+        Search temporal neighbors from both sides of `cut_time`.
+
+        For each source node, collect neighbors before and after `cut_time`, then keep up to
+        `num_neighbors` neighbors with the smallest absolute time distance to `cut_time`.
+        The returned neighbors are sorted by timestamp in ascending order.
+
+        Params
+        ------
+        src_idx_l: List[int]
+        cut_time_l: List[float]
+        num_neighbors: int
+        """
+        assert(len(src_idx_l) == len(cut_time_l))
+
+        out_ngh_node_batch = np.zeros((len(src_idx_l), num_neighbors)).astype(np.int32)
+        out_ngh_t_batch = np.zeros((len(src_idx_l), num_neighbors)).astype(np.float32)
+        out_ngh_eidx_batch = np.zeros((len(src_idx_l), num_neighbors)).astype(np.int32)
+
+        for i, (src_idx, cut_time) in enumerate(zip(src_idx_l, cut_time_l)):
+            before_idx, before_eidx, before_ts = self.find_before(src_idx, cut_time)
+            after_idx, after_eidx, after_ts = self.find_after(src_idx, cut_time)
+
+            ngh_idx = np.concatenate([before_idx, after_idx])
+            ngh_eidx = np.concatenate([before_eidx, after_eidx])
+            ngh_ts = np.concatenate([before_ts, after_ts])
+
+            if len(ngh_idx) > 0:
+                if self.uniform:
+                    sampled_idx = np.random.randint(0, len(ngh_idx), num_neighbors)
+
+                    out_ngh_node_batch[i, :] = ngh_idx[sampled_idx]
+                    out_ngh_t_batch[i, :] = ngh_ts[sampled_idx]
+                    out_ngh_eidx_batch[i, :] = ngh_eidx[sampled_idx]
+
+                    pos = out_ngh_t_batch[i, :].argsort()
+                    out_ngh_node_batch[i, :] = out_ngh_node_batch[i, :][pos]
+                    out_ngh_t_batch[i, :] = out_ngh_t_batch[i, :][pos]
+                    out_ngh_eidx_batch[i, :] = out_ngh_eidx_batch[i, :][pos]
+                else:
+                    ngh_dt = np.abs(ngh_ts - cut_time)
+                    order = np.argsort(ngh_dt, kind='stable')
+
+                    if len(order) > num_neighbors:
+                        order = order[:num_neighbors]
+
+                    sel_idx = ngh_idx[order]
+                    sel_ts = ngh_ts[order]
+                    sel_eidx = ngh_eidx[order]
+
+                    time_order = np.argsort(sel_ts, kind='stable')
+                    sel_idx = sel_idx[time_order]
+                    sel_ts = sel_ts[time_order]
+                    sel_eidx = sel_eidx[time_order]
+
+                    out_ngh_node_batch[i, num_neighbors - len(sel_idx):] = sel_idx
+                    out_ngh_t_batch[i, num_neighbors - len(sel_ts):] = sel_ts
+                    out_ngh_eidx_batch[i, num_neighbors - len(sel_eidx):] = sel_eidx
+
+        return out_ngh_node_batch, out_ngh_eidx_batch, out_ngh_t_batch
+
+    def find_k_hop(self, k, src_idx_l, cut_time_l, num_neighbors=20, bidirection=False):
         """Sampling the k-hop sub graph
         """
-        x, y, z = self.get_temporal_neighbor(src_idx_l, cut_time_l, num_neighbors)
+        if not bidirection:
+            x, y, z = self.get_temporal_neighbor(src_idx_l, cut_time_l, num_neighbors)
+        else: 
+            x, y, z = self.get_temporal_neighbor_bidirection(src_idx_l, cut_time_l, num_neighbors)
         node_records = [x]
         eidx_records = [y]
         t_records = [z]
@@ -154,4 +256,3 @@ class NeighborFinder:
         return node_records, eidx_records, t_records
 
             
-

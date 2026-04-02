@@ -13,3 +13,5 @@ syn_data/
 results/
 pretrain/*.npy
 preprocess/*.csv
+data/*
+CTDNE/
